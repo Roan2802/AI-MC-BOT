@@ -2,8 +2,8 @@ import mineflayer from 'mineflayer'
 import { pathfinder } from 'mineflayer-pathfinder'
 
 const bot = mineflayer.createBot({
-  host: 'localhost', // werkt ook via LAN
-  port: 30000,
+  host: 'localhost',
+  port: 25565,
   username: 'Agent01'
 })
 

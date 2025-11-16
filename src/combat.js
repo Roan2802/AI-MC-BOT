@@ -3,9 +3,11 @@ import { goTo } from './navigation.js'
 import { tryInitEnhanced, enhancedAttack, enableAutoEat } from './combatEnhanced.js'
 
 function isHostile(entity) {
-  if (!entity || !entity.mobType) return false
+  if (!entity) return false
+  // ensure it's a mob
+  if (entity.type !== 'mob') return false
   const hostileNames = ['zombie', 'skeleton', 'creeper', 'spider', 'pillager', 'hoglin', 'drowned', 'phantom', 'enderman', 'witch']
-  const name = (entity.name || '').toLowerCase()
+  const name = (entity.name || (entity.mobType || '')).toString().toLowerCase()
   return hostileNames.some(h => name.includes(h))
 }
 
@@ -156,13 +158,13 @@ export function stopCombatMonitor(bot) {
 export function protectPlayer(bot, playerName) {
   if (!playerName) return false
   bot._protectTarget = playerName
-  bot.chat(`🛡️ Protect mode: bewaking van ${playerName}`)
+  if (bot._debug) console.log('[Combat.protectPlayer] protect target set to', playerName)
   return true
 }
 
 export function stopProtect(bot) {
   delete bot._protectTarget
-  bot.chat('🛡️ Protect mode uitgeschakeld')
+  if (bot._debug) console.log('[Combat.stopProtect] protect mode cleared')
 }
 
 export default { startCombatMonitor, stopCombatMonitor, protectPlayer, stopProtect }

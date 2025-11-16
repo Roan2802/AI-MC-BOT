@@ -333,9 +333,17 @@ export default {
     }
     try {
       const { protectPlayer, startCombatMonitor } = await import('../src/combat.js')
+      // verify player exists in current world
+      const p = bot.players && bot.players[playerName]
+      if (!p || !p.entity) {
+        bot.chat(`❌ Speler ${playerName} niet gevonden`)
+        return
+      }
       // ensure monitor running
       startCombatMonitor(bot)
-      protectPlayer(bot, playerName)
+      const ok = protectPlayer(bot, playerName)
+      if (ok) bot.chat(`🛡️ Protect mode: bewaking van ${playerName}`)
+      else bot.chat('❌ Protect niet gestart')
     } catch (e) {
       bot.chat(`❌ Protect mislukt: ${e && e.message}`)
     }

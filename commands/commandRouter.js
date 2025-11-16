@@ -16,6 +16,12 @@ import { tryInitEnhanced, enableAutoEat } from '../src/combatEnhanced.js'
  * @param {object} bot - Mineflayer bot instance
  */
 export default function initCommandRouter(bot) {
+  // Prevent multiple initializations (e.g., respawn triggers)
+  if (bot._commandRouterInitialized) {
+    if (bot._debug) console.log('[Router] already initialized, skipping')
+    return { initCommandRouter }
+  }
+  bot._commandRouterInitialized = true
   const taskQueue = [] // TODO: Implement task queue for spam prevention
   let isProcessing = false
   const automationEngine = createDefaultEngine(bot) // Initialize automation engine

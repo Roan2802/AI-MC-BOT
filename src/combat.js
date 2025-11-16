@@ -16,11 +16,15 @@ async function equipBestWeapon(bot) {
     let weapon = items.find(i => i.name && i.name.includes('sword'))
     if (!weapon) weapon = items.find(i => i.name && i.name.includes('axe'))
     if (weapon) {
+      if (bot._debug) console.log('[Combat.equipBestWeapon] equipping', weapon.name)
       await bot.equip(weapon, 'hand')
+      if (bot._debug) console.log('[Combat.equipBestWeapon] ✅ equipped', weapon.name)
       return true
+    } else {
+      if (bot._debug) console.log('[Combat.equipBestWeapon] ⚠️ no sword or axe found in inventory')
     }
   } catch (e) {
-    // ignore
+    console.warn('[Combat.equipBestWeapon] equip error:', e && e.message)
   }
   return false
 }
@@ -29,30 +33,40 @@ async function approachAndAttack(bot, entity, opts = {}) {
   if (!entity || !entity.position) return false
   try {
     const targetPos = entity.position
+    if (bot._debug) console.log('[Combat.approachAndAttack] approaching', entity.name, 'at', targetPos)
     // approach within 2.5 blocks
     await goTo(bot, { x: targetPos.x, y: targetPos.y, z: targetPos.z }, { timeout: opts.timeout || 15000 })
+    if (bot._debug) console.log('[Combat.approachAndAttack] ✅ reached target')
     await equipBestWeapon(bot)
     // simple attack loop
     const start = Date.now()
+    let attackCount = 0
     while (entity && entity.health > 0 && Date.now() - start < (opts.maxDuration || 30000)) {
       if (bot.entity.position.distanceTo(entity.position) > 3.5) {
+        if (bot._debug) console.log('[Combat.approachAndAttack] target too far, re-approaching')
         // re-approach
         await goTo(bot, { x: entity.position.x, y: entity.position.y, z: entity.position.z }, { timeout: 10000 })
       }
       try {
         if (typeof bot.attack === 'function') {
           bot.attack(entity)
+          attackCount++
+          if (bot._debug) console.log('[Combat.approachAndAttack] attacked (count:', attackCount, ')')
         } else {
           // fallback: swing arm
           bot.swingArm()
+          attackCount++
+          if (bot._debug) console.log('[Combat.approachAndAttack] swung arm (count:', attackCount, ')')
         }
       } catch (e) {
-        // ignore attack errors
+        console.warn('[Combat.approachAndAttack] attack attempt failed:', e && e.message)
       }
       await new Promise(r => setTimeout(r, 700))
     }
+    if (bot._debug) console.log('[Combat.approachAndAttack] ✅ finished attacking', entity.name, 'total attacks:', attackCount)
     return true
   } catch (e) {
+    console.warn('[Combat.approachAndAttack] error:', e && e.message)
     return false
   }
 }
@@ -61,6 +75,10 @@ function scanForHostiles(bot, range = 12) {
   const entities = Object.values(bot.entities || {})
   const hostiles = entities.filter(e => e && e.type === 'mob' && isHostile(e) && bot.entity.position.distanceTo(e.position) <= range)
   hostiles.sort((a, b) => bot.entity.position.distanceTo(a.position) - bot.entity.position.distanceTo(b.position))
+  if (bot._debug && hostiles.length > 0) {
+    console.log('[Combat.scanForHostiles] found', hostiles.length, 'hostile(s) within', range, 'blocks:',
+      hostiles.map(h => `${h.name} @ ${Math.round(h.position.x)},${h.position.y},${h.position.z}`).join('; '))
+  }
   return hostiles[0] || null
 }
 
@@ -76,6 +94,7 @@ export function startCombatMonitor(bot, opts = {}) {
       if (lowHealth) {
         const safe = findNearbySafePosition(bot, bot.entity.position, 8)
         if (safe) {
+          if (bot._debug) console.log('[Combat] ❤️ low health detected, fleeing to', safe)
           bot.chat('❤️ Laag leven: vluchten naar veilige plek')
           if (bot.pathfinder) bot.pathfinder.setGoal(null)
           await goTo(bot, safe, { timeout: 15000, checkSafety: false })
@@ -88,8 +107,10 @@ export function startCombatMonitor(bot, opts = {}) {
       if (bot._protectTarget) {
         const playerEnt = Object.values(bot.entities || {}).find(e => e && e.type === 'player' && e.username === bot._protectTarget)
         if (playerEnt) {
+          if (bot._debug) console.log('[Combat.protectPlayer] scanning around', bot._protectTarget)
           // find hostile near player
           target = Object.values(bot.entities || {}).find(e => e && e.type === 'mob' && isHostile(e) && playerEnt.position.distanceTo(e.position) <= (opts.protectRange || 10))
+          if (target && bot._debug) console.log('[Combat.protectPlayer] threat to', bot._protectTarget, 'found:', target.name)
         }
       }
 
@@ -98,7 +119,7 @@ export function startCombatMonitor(bot, opts = {}) {
 
       if (target) {
         bot.chat(`⚔️ Vijand gedetecteerd: ${target.name}. Engaging...`)
-        if (bot._debug) console.log('[Combat] target found', target)
+        if (bot._debug) console.log('[Combat] target found:', target.name, 'health:', target.health)
         try {
           if (bot.pathfinder) bot.pathfinder.setGoal(null)
           // prefer enhanced attack if available
@@ -106,7 +127,7 @@ export function startCombatMonitor(bot, opts = {}) {
             if (bot._debug) console.log('[Combat] trying enhancedAttack')
             const ok = enhancedAttack(bot, target)
             if (!ok) {
-              if (bot._debug) console.log('[Combat] enhancedAttack failed, falling back')
+              if (bot._debug) console.log('[Combat] enhancedAttack failed, falling back to approachAndAttack')
               await approachAndAttack(bot, target, { maxDuration: opts.maxAttackTime || 30000 })
             }
           } else {

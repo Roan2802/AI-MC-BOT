@@ -13,7 +13,7 @@ export function isBlockSafe(bot, block){
 }
 
 export function isPositionSafe(bot, pos){
-  const below = bot.blockAt(pos.offset(0, -1, 0))
+  const below = bot.blockAt({x: pos.x, y: pos.y - 1, z: pos.z})
   if (!below) return false
   const bname = below && below.name ? below.name : ''
   if (bname.includes('lava')) return false
@@ -26,7 +26,7 @@ export function isPositionSafe(bot, pos){
   // check drop depth (air blocks below)
   let depth = 0
   for (let i = 1; i <= 6; i++) {
-    const b = bot.blockAt(pos.offset(0, -i, 0))
+    const b = bot.blockAt({x: pos.x, y: pos.y - i, z: pos.z})
     if (!b || b.name === 'air') depth++
     else break
   }
@@ -38,7 +38,7 @@ export function isLavaNearby(bot, pos, radius = 3) {
   for (let dx = -radius; dx <= radius; dx++) {
     for (let dy = -1; dy <= 2; dy++) {
       for (let dz = -radius; dz <= radius; dz++) {
-        const b = bot.blockAt(pos.offset(dx, dy, dz))
+        const b = bot.blockAt({x: pos.x + dx, y: pos.y + dy, z: pos.z + dz})
         if (b && b.name && b.name.includes('lava')) return true
       }
     }
@@ -50,7 +50,7 @@ export function isFireNearby(bot, pos, radius = 2) {
   for (let dx = -radius; dx <= radius; dx++) {
     for (let dy = -1; dy <= 2; dy++) {
       for (let dz = -radius; dz <= radius; dz++) {
-        const b = bot.blockAt(pos.offset(dx, dy, dz))
+        const b = bot.blockAt({x: pos.x + dx, y: pos.y + dy, z: pos.z + dz})
         if (b && b.name) {
           const n = b.name
           if (n.includes('fire') || n === 'campfire' || n === 'lava') return true
@@ -64,7 +64,7 @@ export function isFireNearby(bot, pos, radius = 2) {
 export function isDeepDrop(bot, pos, threshold = 4) {
   let depth = 0
   for (let i = 1; i <= 10; i++) {
-    const b = bot.blockAt(pos.offset(0, -i, 0))
+    const b = bot.blockAt({x: pos.x, y: pos.y - i, z: pos.z})
     if (!b || b.name === 'air') depth++
     else break
   }

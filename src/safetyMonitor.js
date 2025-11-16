@@ -70,7 +70,6 @@ export function startSafetyMonitor(bot, opts = {}) {
           if (bot.pathfinder && !bot._safetyState.navigating) bot.pathfinder.setGoal(null)
           const safePos = findNearbySafePosition(bot, floored, searchRadius)
           if (safePos) {
-            sendChatWithCooldown('gotoSafe', `🚨 Ga naar veilige positie ${Math.round(safePos.x)},${Math.round(safePos.y)},${Math.round(safePos.z)}`, 10000)
             if (bot._debug) console.log('[SafetyMonitor] navigating to safePos', safePos)
             bot._safetyState.navigating = true
             let reached = false
@@ -80,23 +79,19 @@ export function startSafetyMonitor(bot, opts = {}) {
               bot._safetyState.navigating = false
             }
             if (reached) {
-              sendChatWithCooldown('reachedSafe', '✅ Bereikt veilige positie', 10000)
               if (bot._debug) console.log('[SafetyMonitor] reached safePos')
             }
           } else {
-            sendChatWithCooldown('noSafeFound', '❌ Geen veilige positie gevonden — wachten en blokkeren acties', 15000)
-            if (bot.pathfinder) bot.pathfinder.setGoal(null)
-            if (bot._debug) console.warn('[SafetyMonitor] no safe position found')
+            // No safe position found: just retry pathfinding without blocking
+            if (bot._debug) console.warn('[SafetyMonitor] no safe position found, will retry next cycle')
+            // Don't stop — let the monitor check again next cycle
           }
         } catch (e) {
           console.error('[SafetyMonitor] herstel mislukt:', e && e.message)
-          console.error(e && e.stack)
+          if (bot._debug) console.error(e && e.stack)
         }
       } else {
-        // environment is safe; only announce once when returning to safe state
-        if (bot._safetyState.unsafe) {
-          sendChatWithCooldown('becameSafe', '✅ Omgeving veilig', 10000)
-        }
+        // environment is safe; reset state but don't spam chat
         bot._safetyState.unsafe = false
       }
     } catch (e) {

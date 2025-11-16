@@ -1,6 +1,9 @@
 import { findNearbySafePosition } from '../utils/safety.js'
 import { goTo } from './navigation.js'
 import { tryInitEnhanced, enhancedAttack, enableAutoEat } from './combatEnhanced.js'
+import pathfinderPkg from 'mineflayer-pathfinder'
+const { Movements, goals } = pathfinderPkg
+const { GoalFollow } = goals
 
 export function isHostile(entity) {
   if (!entity) return false
@@ -136,6 +139,23 @@ export function startCombatMonitor(bot, opts = {}) {
           // use findHostileNear for more reliable 10-block protect range
           target = findHostileNear(bot, playerEnt.position, opts.protectRange || 10)
           if (target && bot._debug) console.log('[Combat.protectPlayer] threat to', bot._protectTarget, 'found:', target.name, 'distance:', playerEnt.position.distanceTo(target.position))
+          
+          // Auto-follow protected player if no immediate threat
+          if (!target) {
+            const distToPlayer = bot.entity.position.distanceTo(playerEnt.position)
+            if (distToPlayer > 3) {
+              // Follow player at ~2.5 block distance
+              try {
+                if (bot.pathfinder) {
+                  bot.pathfinder.setMovements(new Movements(bot))
+                  bot.pathfinder.setGoal(new GoalFollow(playerEnt, 2.5))
+                  if (bot._debug) console.log('[Combat.protectPlayer] following', bot._protectTarget, 'dist:', distToPlayer)
+                }
+              } catch (e) {
+                if (bot._debug) console.warn('[Combat.protectPlayer] could not follow:', e && e.message)
+              }
+            }
+          }
         }
       }
 

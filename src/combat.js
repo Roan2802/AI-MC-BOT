@@ -103,9 +103,10 @@ export function findHostileNear(bot, centerPos, range = 10) {
 }
 
 export function startCombatMonitor(bot, opts = {}) {
-  const interval = opts.intervalMs || 1200
+  const interval = opts.intervalMs || 2000  // Increase to 2000ms to reduce re-calibration
   if (bot._combatMonitorId) return
   bot._protectTarget = null
+  bot._lastFollowGoal = null  // Track current follow goal to avoid re-setting
   bot._combatMonitorId = setInterval(async () => {
     try {
       if (!bot.entity) return
@@ -134,6 +135,7 @@ export function startCombatMonitor(bot, opts = {}) {
         }
         if (!playerEnt) {
           if (bot._debug) console.log('[Combat.protectPlayer] protect target present but player entity not found for', bot._protectTarget, 'bot.players keys:', Object.keys(bot.players || {}))
+          bot._lastFollowGoal = null
         } else {
           if (bot._debug) console.log('[Combat.protectPlayer] scanning around', bot._protectTarget, 'at', playerEnt.position)
           // use findHostileNear for more reliable 10-block protect range
@@ -144,17 +146,32 @@ export function startCombatMonitor(bot, opts = {}) {
           if (!target) {
             const distToPlayer = bot.entity.position.distanceTo(playerEnt.position)
             if (distToPlayer > 3) {
-              // Follow player at ~2.5 block distance
-              try {
-                if (bot.pathfinder) {
-                  bot.pathfinder.setMovements(new Movements(bot))
-                  bot.pathfinder.setGoal(new GoalFollow(playerEnt, 2.5))
-                  if (bot._debug) console.log('[Combat.protectPlayer] following', bot._protectTarget, 'dist:', distToPlayer)
+              // Only set follow goal if it changed or we don't have one
+              const playerKey = `${playerEnt.id || playerEnt.username}`
+              if (bot._lastFollowGoal !== playerKey) {
+                try {
+                  if (bot.pathfinder) {
+                    bot.pathfinder.setMovements(new Movements(bot))
+                    bot.pathfinder.setGoal(new GoalFollow(playerEnt, 2.5))
+                    bot._lastFollowGoal = playerKey
+                    if (bot._debug) console.log('[Combat.protectPlayer] set follow goal for', bot._protectTarget)
+                  }
+                } catch (e) {
+                  if (bot._debug) console.warn('[Combat.protectPlayer] could not follow:', e && e.message)
+                  bot._lastFollowGoal = null
                 }
-              } catch (e) {
-                if (bot._debug) console.warn('[Combat.protectPlayer] could not follow:', e && e.message)
+              }
+            } else {
+              // Close enough, stop goal
+              if (bot._lastFollowGoal !== null) {
+                if (bot.pathfinder) bot.pathfinder.setGoal(null)
+                bot._lastFollowGoal = null
+                if (bot._debug) console.log('[Combat.protectPlayer] close enough, stop goal')
               }
             }
+          } else {
+            // Threat detected, clear follow
+            bot._lastFollowGoal = null
           }
         }
       }
@@ -165,6 +182,7 @@ export function startCombatMonitor(bot, opts = {}) {
       if (target) {
         bot.chat(`⚔️ Vijand gedetecteerd: ${target.name}. Engaging...`)
         if (bot._debug) console.log('[Combat] target found:', target.name, 'health:', target.health)
+        bot._lastFollowGoal = null  // Clear follow state during combat
         try {
           if (bot.pathfinder) bot.pathfinder.setGoal(null)
           // prefer enhanced attack if available
@@ -196,6 +214,7 @@ export function stopCombatMonitor(bot) {
     delete bot._combatMonitorId
   }
   if (bot._protectTarget) delete bot._protectTarget
+  if (bot._lastFollowGoal) delete bot._lastFollowGoal
 }
 
 export function protectPlayer(bot, playerName) {

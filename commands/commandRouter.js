@@ -27,29 +27,36 @@ export default function initCommandRouter(bot) {
   const automationEngine = createDefaultEngine(bot) // Initialize automation engine
   let automationEnabled = false
 
-  // Start safety monitor (lava / fire / deep-drop avoidance)
-  try {
-    startSafetyMonitor(bot, { intervalMs: 1500, searchRadius: 6 })
-    console.log('[Safety] Safety monitor gestart')
-  } catch (e) {
-    console.error('[Safety] Kon safety monitor niet starten:', e && e.message)
-  }
+  // If bot doesn't expose chat (e.g., unit tests with fakeBot), skip long-running
+  // monitors and periodic automation to avoid keeping the process alive.
+  const headless = (typeof bot.chat !== 'function') || process.env.NODE_ENV === 'test'
+  if (!headless) {
+    // Start safety monitor (lava / fire / deep-drop avoidance)
+    try {
+      startSafetyMonitor(bot, { intervalMs: 1500, searchRadius: 6 })
+      console.log('[Safety] Safety monitor gestart')
+    } catch (e) {
+      console.error('[Safety] Kon safety monitor niet starten:', e && e.message)
+    }
 
-  try {
-    startCombatMonitor(bot, { intervalMs: 1200, scanRange: 12, fleeHealth: 6 })
-    console.log('[Combat] Combat monitor gestart')
-  } catch (e) {
-    console.error('[Combat] Kon combat monitor niet starten:', e && e.message)
-  }
+    try {
+      startCombatMonitor(bot, { intervalMs: 1200, scanRange: 12, fleeHealth: 6 })
+      console.log('[Combat] Combat monitor gestart')
+    } catch (e) {
+      console.error('[Combat] Kon combat monitor niet starten:', e && e.message)
+    }
 
-  // Try to initialize optional enhanced combat features (plugins)
-  try {
-    tryInitEnhanced(bot).then(() => {
-      // enable auto-eat if available
-      enableAutoEat(bot, { priority: 'saturation' })
-    }).catch(err => console.warn('[CombatEnhanced] init failed:', err && err.message))
-  } catch (e) {
-    console.warn('[CombatEnhanced] could not init:', e && e.message)
+    // Try to initialize optional enhanced combat features (plugins)
+    try {
+      tryInitEnhanced(bot).then(() => {
+        // enable auto-eat if available
+        enableAutoEat(bot, { priority: 'saturation' })
+      }).catch(err => console.warn('[CombatEnhanced] init failed:', err && err.message))
+    } catch (e) {
+      console.warn('[CombatEnhanced] could not init:', e && e.message)
+    }
+  } else {
+    if (bot._debug) console.log('[Router] headless/test bot detected — skipping monitors')
   }
 
   /**
@@ -72,22 +79,27 @@ export default function initCommandRouter(bot) {
   }
 
   // Periodic automation check (every 10 seconds)
-  setInterval(async () => {
-    if (!automationEnabled) return
-    try {
-      const triggered = automationEngine.evaluateRules()
-      if (triggered.length > 0) {
-        await automationEngine.executeRules(triggered, false) // Queue for processing
+  // Only run automation loop for real bots (not headless/test fakes)
+  if (!((typeof bot.chat !== 'function') || process.env.NODE_ENV === 'test')) {
+    setInterval(async () => {
+      if (!automationEnabled) return
+      try {
+        const triggered = automationEngine.evaluateRules()
+        if (triggered.length > 0) {
+          await automationEngine.executeRules(triggered, false) // Queue for processing
+        }
+        // Process queued automation tasks
+        const completed = await automationEngine.processTasks()
+        if (completed > 0) {
+          console.log(`[Automation] Processed ${completed} queued tasks`)
+        }
+      } catch (e) {
+        console.error('[Automation] Periodic check failed:', e.message)
       }
-      // Process queued automation tasks
-      const completed = await automationEngine.processTasks()
-      if (completed > 0) {
-        console.log(`[Automation] Processed ${completed} queued tasks`)
-      }
-    } catch (e) {
-      console.error('[Automation] Periodic check failed:', e.message)
-    }
-  }, 10000)
+    }, 10000)
+  } else {
+    if (bot._debug) console.log('[Router] skipping automation loop in headless/test mode')
+  }
 
   bot.on('chat', (username, message) => {
     if (username === bot.username) return

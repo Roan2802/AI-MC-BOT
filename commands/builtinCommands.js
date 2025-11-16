@@ -115,8 +115,9 @@ export default {
    * @param {object} bot
    * @param {string} [resource='oak_log']
    */
-  async mine(bot, resource = 'oak_log') {
-    bot.chat(`⛏️ Ik zoek naar ${resource}...`)
+  async mine(bot, resource = 'oak_log', count = '1') {
+    const n = parseInt(count, 10) || 1
+    bot.chat(`⛏️ Ik zoek naar ${resource} x${n}...`)
     try {
       // Ensure we have an appropriate tool (axe for wood, pickaxe for stone/ore)
       const taskType = /wood|log|oak|plank/.test(resource) ? 'wood' : (/stone|ore|coal|iron/.test(resource) ? 'stone' : 'stone')
@@ -125,10 +126,33 @@ export default {
         bot.chat('❌ Kon het benodigde gereedschap niet maken, stop.')
         return
       }
-      await mineResource(bot, resource, 20)
-      bot.chat(`✅ Klaar met hakken van ${resource}`)
+      // If ores requested, use mineOres for multiple blocks
+      if (/ore|stone/.test(resource) || resource === 'ore') {
+        const got = await mineOres(bot, 32, n)
+        bot.chat(`✅ Klaar met mijnen: ${got} blokken`) 
+        return
+      }
+
+      // If wood requested, delegate to harvestWood when multiple
+      if (/log|wood/.test(resource)) {
+        const got = await harvestWood(bot, 20, n)
+        bot.chat(`✅ Klaar met hakken van hout: ${got} blokken`)
+        return
+      }
+
+      // Fallback: mine individual blocks up to n
+      let mined = 0
+      for (let i = 0; i < n; i++) {
+        try {
+          await mineResource(bot, resource, 20)
+          mined++
+        } catch (e) {
+          break
+        }
+      }
+      bot.chat(`✅ Klaar: ${mined} blokken van ${resource}`)
     } catch (e) {
-      bot.chat(`❌ Kon geen ${resource} vinden: ${e.message}`)
+      bot.chat(`❌ Kon geen ${resource} vinden: ${e && e.message}`)
       console.error('[Mining] Error:', e && e.message)
     }
   },
@@ -151,11 +175,12 @@ export default {
    * chop - Harvest nearby wood (best-effort)
    * @param {object} bot
    */
-  async chop(bot) {
+  async chop(bot, count = '32') {
+    const n = parseInt(count, 10) || 32
     try {
-      bot.chat('🌲 Ik ga hout hakken...')
-      const count = await harvestWood(bot, 20, 32)
-      bot.chat(`✅ Klaar met hakken: ${count} blokken verzameld`)
+      bot.chat(`🌲 Ik ga hout hakken... (${n} blokken)`)
+      const got = await harvestWood(bot, 20, n)
+      bot.chat(`✅ Klaar met hakken: ${got} blokken verzameld`)
     } catch (e) {
       bot.chat(`❌ Hout hakken mislukt: ${e && e.message}`)
     }
@@ -325,7 +350,12 @@ export default {
       try {
         const { stopProtect } = await import('../src/combat.js')
         stopProtect(bot)
-        bot.chat('🛡️ Protect uitgeschakeld')
+        // avoid spamming the same protect message
+        bot._lastProtectMsg = bot._lastProtectMsg || 0
+        if (Date.now() - bot._lastProtectMsg > 5000) {
+          bot.chat('🛡️ Protect uitgeschakeld')
+          bot._lastProtectMsg = Date.now()
+        }
       } catch (e) {
         bot.chat('Kon protect niet uitschakelen')
       }
@@ -342,7 +372,13 @@ export default {
       // ensure monitor running
       startCombatMonitor(bot)
       const ok = protectPlayer(bot, playerName)
-      if (ok) bot.chat(`🛡️ Protect mode: bewaking van ${playerName}`)
+      if (ok) {
+        bot._lastProtectMsg = bot._lastProtectMsg || 0
+        if (Date.now() - bot._lastProtectMsg > 5000) {
+          bot.chat(`🛡️ Protect mode: bewaking van ${playerName}`)
+          bot._lastProtectMsg = Date.now()
+        }
+      }
       else bot.chat('❌ Protect niet gestart')
     } catch (e) {
       bot.chat(`❌ Protect mislukt: ${e && e.message}`)

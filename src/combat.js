@@ -2,7 +2,7 @@ import { findNearbySafePosition } from '../utils/safety.js'
 import { goTo } from './navigation.js'
 import { tryInitEnhanced, enhancedAttack, enableAutoEat } from './combatEnhanced.js'
 
-function isHostile(entity) {
+export function isHostile(entity) {
   if (!entity) return false
   // ensure it's a mob
   if (entity.type !== 'mob') return false
@@ -73,7 +73,8 @@ async function approachAndAttack(bot, entity, opts = {}) {
   }
 }
 
-function scanForHostiles(bot, range = 12) {
+export function scanForHostiles(bot, range = 12) {
+  if (!bot || !bot.entity || !bot.entity.position) return null
   const entities = Object.values(bot.entities || {})
   const hostiles = entities.filter(e => e && e.type === 'mob' && isHostile(e) && bot.entity.position.distanceTo(e.position) <= range)
   hostiles.sort((a, b) => bot.entity.position.distanceTo(a.position) - bot.entity.position.distanceTo(b.position))
@@ -81,6 +82,20 @@ function scanForHostiles(bot, range = 12) {
     console.log('[Combat.scanForHostiles] found', hostiles.length, 'hostile(s) within', range, 'blocks:',
       hostiles.map(h => `${h.name} @ ${Math.round(h.position.x)},${h.position.y},${h.position.z}`).join('; '))
   }
+  return hostiles[0] || null
+}
+
+export function findHostileNear(bot, centerPos, range = 10) {
+  if (!bot || !centerPos) return null
+  const entities = Object.values(bot.entities || {})
+  const hostiles = entities.filter(e =>
+    e &&
+    e.type === 'mob' &&
+    isHostile(e) &&
+    centerPos.distanceTo &&
+    centerPos.distanceTo(e.position) <= range
+  )
+  hostiles.sort((a, b) => centerPos.distanceTo(a.position) - centerPos.distanceTo(b.position))
   return hostiles[0] || null
 }
 
@@ -117,10 +132,10 @@ export function startCombatMonitor(bot, opts = {}) {
         if (!playerEnt) {
           if (bot._debug) console.log('[Combat.protectPlayer] protect target present but player entity not found for', bot._protectTarget, 'bot.players keys:', Object.keys(bot.players || {}))
         } else {
-          if (bot._debug) console.log('[Combat.protectPlayer] scanning around', bot._protectTarget)
-          // find hostile near player
-          target = Object.values(bot.entities || {}).find(e => e && e.type === 'mob' && isHostile(e) && playerEnt.position && playerEnt.position.distanceTo && playerEnt.position.distanceTo(e.position) <= (opts.protectRange || 10))
-          if (target && bot._debug) console.log('[Combat.protectPlayer] threat to', bot._protectTarget, 'found:', target.name)
+          if (bot._debug) console.log('[Combat.protectPlayer] scanning around', bot._protectTarget, 'at', playerEnt.position)
+          // use findHostileNear for more reliable 10-block protect range
+          target = findHostileNear(bot, playerEnt.position, opts.protectRange || 10)
+          if (target && bot._debug) console.log('[Combat.protectPlayer] threat to', bot._protectTarget, 'found:', target.name, 'distance:', playerEnt.position.distanceTo(target.position))
         }
       }
 
@@ -175,4 +190,4 @@ export function stopProtect(bot) {
   if (bot._debug) console.log('[Combat.stopProtect] protect mode cleared')
 }
 
-export default { startCombatMonitor, stopCombatMonitor, protectPlayer, stopProtect }
+export default { startCombatMonitor, stopCombatMonitor, protectPlayer, stopProtect, isHostile, scanForHostiles, findHostileNear }

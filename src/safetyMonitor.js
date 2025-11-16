@@ -5,9 +5,12 @@ import { goTo } from './navigation.js'
  * Safety monitor: periodically checks bot's surroundings and moves to safe spot.
  */
 export function startSafetyMonitor(bot, opts = {}) {
-  const intervalMs = opts.intervalMs || 1500
+  const intervalMs = opts.intervalMs || 3000
   const searchRadius = opts.searchRadius || 6
   if (bot._safetyMonitorId) return
+
+  // Initialize last-state tracking to avoid chat spam
+  if (!bot._safetyState) bot._safetyState = { unsafe: false, lastMessages: {} }
 
   bot._safetyMonitorId = setInterval(async () => {
     try {
@@ -43,20 +46,45 @@ export function startSafetyMonitor(bot, opts = {}) {
         console.log('[SafetyMonitor] pos=', floored, 'safe=', safe, 'lavaNearby=', lavaNearby, 'fireNearby=', fireNearby)
       }
 
-      if (!safe || lavaNearby || fireNearby) {
+      const now = Date.now()
+      // helper to send chat messages with cooldown per key
+      function sendChatWithCooldown(key, message, cooldownMs = 8000) {
+        bot._safetyState.lastMessages = bot._safetyState.lastMessages || {}
+        const last = bot._safetyState.lastMessages[key] || 0
+        if (now - last > cooldownMs) {
+          try { bot.chat(message) } catch (e) { console.warn('[SafetyMonitor] chat failed', e && e.message) }
+          bot._safetyState.lastMessages[key] = now
+        }
+      }
+
+      const currentlyUnsafe = (!safe || lavaNearby || fireNearby)
+      // If became unsafe, announce once (or with cooldown)
+      if (currentlyUnsafe && !bot._safetyState.unsafe) {
+        sendChatWithCooldown('becameUnsafe', '⚠️ Omgeving onveilig gedetecteerd — zoek veilige plek...', 10000)
+        bot._safetyState.unsafe = true
+      }
+
+      if (currentlyUnsafe) {
         try {
-          bot.chat('⚠️ Omgeving onveilig gedetecteerd — zoek veilige plek...')
-          // stop current path
-          if (bot.pathfinder) bot.pathfinder.setGoal(null)
+          // stop current path only if we're not already navigating to a safe spot
+          if (bot.pathfinder && !bot._safetyState.navigating) bot.pathfinder.setGoal(null)
           const safePos = findNearbySafePosition(bot, floored, searchRadius)
           if (safePos) {
-            bot.chat(`🚨 Ga naar veilige positie ${Math.round(safePos.x)},${Math.round(safePos.y)},${Math.round(safePos.z)}`)
+            sendChatWithCooldown('gotoSafe', `🚨 Ga naar veilige positie ${Math.round(safePos.x)},${Math.round(safePos.y)},${Math.round(safePos.z)}`, 10000)
             if (bot._debug) console.log('[SafetyMonitor] navigating to safePos', safePos)
-            await goTo(bot, safePos, { checkSafety: false, timeout: 20000 })
-            bot.chat('✅ Bereikt veilige positie')
-            if (bot._debug) console.log('[SafetyMonitor] reached safePos')
+            bot._safetyState.navigating = true
+            let reached = false
+            try {
+              reached = await goTo(bot, safePos, { checkSafety: false, timeout: 20000 })
+            } finally {
+              bot._safetyState.navigating = false
+            }
+            if (reached) {
+              sendChatWithCooldown('reachedSafe', '✅ Bereikt veilige positie', 10000)
+              if (bot._debug) console.log('[SafetyMonitor] reached safePos')
+            }
           } else {
-            bot.chat('❌ Geen veilige positie gevonden — wachten en blokkeren acties')
+            sendChatWithCooldown('noSafeFound', '❌ Geen veilige positie gevonden — wachten en blokkeren acties', 15000)
             if (bot.pathfinder) bot.pathfinder.setGoal(null)
             if (bot._debug) console.warn('[SafetyMonitor] no safe position found')
           }
@@ -64,6 +92,12 @@ export function startSafetyMonitor(bot, opts = {}) {
           console.error('[SafetyMonitor] herstel mislukt:', e && e.message)
           console.error(e && e.stack)
         }
+      } else {
+        // environment is safe; only announce once when returning to safe state
+        if (bot._safetyState.unsafe) {
+          sendChatWithCooldown('becameSafe', '✅ Omgeving veilig', 10000)
+        }
+        bot._safetyState.unsafe = false
       }
     } catch (e) {
       console.error('[SafetyMonitor] fout:', e && e.message)

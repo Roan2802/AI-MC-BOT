@@ -95,4 +95,39 @@ console.log('Running quick unit tests...');
   assert.strictEqual(onCount, 1)
   console.log('Command router init guard test passed');
 })();
+
+// --- Scan for hostiles: only mobs, no animals ---
+(function testScanForHostiles() {
+  const makePos = (x, y, z) => ({
+    x, y, z,
+    distanceTo(p) {
+      const dx = (p.x || 0) - x
+      const dy = (p.y || 0) - y
+      const dz = (p.z || 0) - z
+      return Math.sqrt(dx * dx + dy * dy + dz * dz)
+    }
+  })
+
+  const fakeBot = {
+    entity: { position: makePos(0, 0, 0) },
+    entities: {
+      1: { id: 1, type: 'mob', name: 'cow', position: makePos(8, 0, 0) },
+      2: { id: 2, type: 'mob', name: 'zombie', position: makePos(5, 0, 0) },
+      3: { id: 3, type: 'mob', name: 'sheep', position: makePos(3, 0, 0) },
+      4: { id: 4, type: 'mob', name: 'skeleton', position: makePos(6, 0, 0) },
+      5: { id: 5, type: 'player', name: 'Roan', position: makePos(0, 0, 0) }
+    },
+    _debug: false
+  }
+
+  const found = combat.scanForHostiles(fakeBot, 12)
+  console.log('scanForHostiles found ->', found && found.name, '(should be zombie or skeleton)')
+  assert.ok(found && (found.name === 'zombie' || found.name === 'skeleton'), `Expected hostile, got ${found && found.name}`)
+  
+  // Verify non-hostiles are NOT returned
+  const allZombie = combat.scanForHostiles(fakeBot, 12)
+  assert.ok(!['cow', 'sheep'].includes(allZombie.name), 'Should not find animals')
+  console.log('Scan for hostiles test passed (animals excluded, hostiles found)');
+})();
+
 console.log('All quick tests OK')

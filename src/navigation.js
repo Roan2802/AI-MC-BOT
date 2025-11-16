@@ -39,6 +39,8 @@ export async function goTo(bot, position, opts = {}) {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const movements = new Movements(bot)
+      try { bot.setControlState && bot.setControlState('sprint', false) } catch (e) {}
+      try { bot.setControlState && bot.setControlState('jump', false) } catch (e) {}
       bot.pathfinder.setMovements(movements)
       const goal = new goals.GoalBlock(position.x, position.y, position.z)
       bot.pathfinder.setGoal(goal)

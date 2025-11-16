@@ -42,6 +42,8 @@ export function followPlayer(bot, playerName) {
       throw new Error(`Speler ${playerName} niet gevonden`)
     }
     const movements = new Movements(bot)
+    try { bot.setControlState && bot.setControlState('sprint', false) } catch (e) {}
+    try { bot.setControlState && bot.setControlState('jump', false) } catch (e) {}
     bot.pathfinder.setMovements(movements)
     const goal = new GoalFollow(player.entity, 2)
     bot.pathfinder.setGoal(goal)
@@ -68,6 +70,8 @@ export function goToPlayer(bot, playerName) {
     }
     const pos = player.entity.position
     const movements = new Movements(bot)
+    try { bot.setControlState && bot.setControlState('sprint', false) } catch (e) {}
+    try { bot.setControlState && bot.setControlState('jump', false) } catch (e) {}
     bot.pathfinder.setMovements(movements)
     const goal = new GoalNear(pos.x, pos.y, pos.z, 2)
     bot.pathfinder.setGoal(goal)
@@ -91,6 +95,8 @@ export function moveToPosition(bot, position) {
       throw new Error('Ongeldige positie')
     }
     const movements = new Movements(bot)
+    try { bot.setControlState && bot.setControlState('sprint', false) } catch (e) {}
+    try { bot.setControlState && bot.setControlState('jump', false) } catch (e) {}
     bot.pathfinder.setMovements(movements)
     const goal = new GoalBlock(Math.floor(position.x), Math.floor(position.y || 64), Math.floor(position.z))
     bot.pathfinder.setGoal(goal)

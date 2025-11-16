@@ -398,20 +398,7 @@ export default {
     // - Select block type from inventory
     // - Plan structure (simple patterns or schematic loading)
 
-        /**
-         * debug [on|off] - Toggle verbose debug logging
-         * @param {object} bot
-         * @param {string} [mode]
-         */
-        async debug(bot, mode = '') {
-          if (!mode) {
-            bot._debug = !bot._debug
-          } else {
-            bot._debug = (mode.toLowerCase() === 'on' || mode.toLowerCase() === 'true')
-          }
-          bot.chat(`🐞 Debug ${bot._debug ? 'ingeschakeld' : 'uitgeschakeld'}`)
-          console.log('[Debug] set debug =', bot._debug)
-        },
+
     // - Place blocks in sequence
     // - Handle block orientation/rotation
     bot.chat('🔨 Bouwsysteem nog niet beschikbaar')
@@ -429,6 +416,21 @@ export default {
     // - Replant seeds
     // - Collect drops
     bot.chat('🌾 Bouwwaststeem nog niet beschikbaar')
+  },
+
+  /**
+   * debug [on|off] - Toggle verbose debug logging
+   * @param {object} bot
+   * @param {string} [mode]
+   */
+  async debug(bot, mode = '') {
+    if (!mode) {
+      bot._debug = !bot._debug
+    } else {
+      bot._debug = (mode.toLowerCase() === 'on' || mode.toLowerCase() === 'true')
+    }
+    bot.chat(`🐞 Debug ${bot._debug ? 'ingeschakeld' : 'uitgeschakeld'}`)
+    console.log('[Debug] set debug =', bot._debug)
   },
 
   /**

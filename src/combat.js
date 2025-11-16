@@ -4,6 +4,7 @@ import { tryInitEnhanced, enhancedAttack, enableAutoEat } from './combatEnhanced
 import pathfinderPkg from 'mineflayer-pathfinder'
 const { Movements, goals } = pathfinderPkg
 const { GoalFollow } = goals
+import { followPlayer, stop as stopMovement } from './movement.js'
 
 export function isHostile(entity) {
   if (!entity) return false
@@ -220,12 +221,29 @@ export function stopCombatMonitor(bot) {
 export function protectPlayer(bot, playerName) {
   if (!playerName) return false
   bot._protectTarget = playerName
+  bot._protectFollowing = true
   if (bot._debug) console.log('[Combat.protectPlayer] protect target set to', playerName)
+  // Try to start following immediately (only when bot supports following)
+  try {
+    if (bot && bot.players && bot.pathfinder) {
+      followPlayer(bot, playerName)
+      if (bot._debug) console.log('[Combat.protectPlayer] started following', playerName)
+    }
+  } catch (e) {
+    if (bot._debug) console.warn('[Combat.protectPlayer] follow start failed:', e && e.message)
+  }
   return true
 }
 
 export function stopProtect(bot) {
   delete bot._protectTarget
+  bot._protectFollowing = false
+  // stop following (safe)
+  try {
+    if (bot && bot.pathfinder && typeof bot.pathfinder.setGoal === 'function') bot.pathfinder.setGoal(null)
+  } catch (e) {
+    if (bot._debug) console.warn('[Combat.stopProtect] stop follow failed:', e && e.message)
+  }
   if (bot._debug) console.log('[Combat.stopProtect] protect mode cleared')
 }
 

@@ -66,14 +66,15 @@ export function startSafetyMonitor(bot, opts = {}) {
 
       if (currentlyUnsafe) {
         try {
-          // stop current path only if we're not already navigating to a safe spot
-          if (bot.pathfinder && !bot._safetyState.navigating) bot.pathfinder.setGoal(null)
+          // Do not cancel existing goals preemptively; try to find a safe position first
           const safePos = findNearbySafePosition(bot, floored, searchRadius)
           if (safePos) {
             if (bot._debug) console.log('[SafetyMonitor] navigating to safePos', safePos)
             bot._safetyState.navigating = true
             let reached = false
             try {
+              // Cancel current goal only when we are about to navigate to safePos
+              if (bot.pathfinder) bot.pathfinder.setGoal(null)
               reached = await goTo(bot, safePos, { checkSafety: false, timeout: 20000 })
             } finally {
               bot._safetyState.navigating = false

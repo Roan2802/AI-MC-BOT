@@ -72,6 +72,8 @@ export default {
     }
     try {
       followPlayer(bot, playerName)
+      // mark last follow to avoid immediate resets
+      bot._lastFollowGoal = playerName
       bot.chat(`👁️ Ik volg nu ${playerName}`)
     } catch (e) {
       bot.chat(`Kon ${playerName} niet volgen: ${e.message}`)

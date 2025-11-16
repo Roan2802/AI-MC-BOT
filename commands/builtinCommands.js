@@ -14,7 +14,6 @@ import { returnHomeAndStore } from '../src/storage.js'
 import { smeltOres, createDriedKelp, createDriedKelpBlock, getJobQueue, buildSmartFuelPlan } from '../src/smelting.js'
 import { harvestWood } from '../src/wood.js'
 import { createCharcoal } from '../src/smelting.js'
-import { mineOres } from '../src/mining.js'
 import { isResourceDepleted, getWornTools, getInventoryStatus, getTimeOfDay } from '../src/automation.js'
 
 /**
@@ -177,6 +176,33 @@ export default {
   },
 
   /**
+   * craft <tool> - Craft a tool or item by name
+   * @param {object} bot
+   * @param {string} [toolName='stone_pickaxe'] - Tool name to craft
+   */
+  async craft(bot, toolName = 'stone_pickaxe') {
+    const tool = toolName.toLowerCase()
+    try {
+      bot.chat(`🔧 Probeer ${tool} te maken...`)
+      
+      if (/stone.*pick|pickaxe.*stone/.test(tool)) {
+        const ok = await ensureStonePickaxe(bot)
+        bot.chat(ok ? '✅ Stone pickaxe gemaakt' : '❌ Kon niet maken')
+      } else if (/iron.*pick|pickaxe.*iron/.test(tool)) {
+        const ok = await ensureIronPickaxe(bot)
+        bot.chat(ok ? '✅ Iron pickaxe gemaakt' : '❌ Kon niet maken')
+      } else if (/wood.*pick|pickaxe.*wood|wooden/.test(tool)) {
+        const ok = await ensureWoodenPickaxe(bot)
+        bot.chat(ok ? '✅ Wooden pickaxe gemaakt' : '❌ Kon niet maken')
+      } else {
+        bot.chat(`❓ Weet niet hoe ${tool} te maken`)
+      }
+    } catch (e) {
+      bot.chat(`❌ Crafting mislukt: ${e && e.message}`)
+    }
+  },
+
+  /**
    * mineores - Zoek en mijn meerdere ertsen (best-effort)
    * @param {object} bot
    */
@@ -294,16 +320,25 @@ export default {
    */
   async protect(bot, playerName) {
     if (!playerName) {
-      bot.chat('Gebruik: !protect <spelernaam>')
+      // toggle off
+      // stop protect if running
+      try {
+        const { stopProtect } = await import('../src/combat.js')
+        stopProtect(bot)
+        bot.chat('🛡️ Protect uitgeschakeld')
+      } catch (e) {
+        bot.chat('Kon protect niet uitschakelen')
+      }
       return
     }
-    // TODO: Implement protect/guard behavior (combat system)
-    // - Monitor player health
-    // - Detect nearby hostile mobs
-    // - Attack mobs threatening the player
-    // - Maintain defensive stance
-    bot.chat(`🛡️ Ik bescherm nu ${playerName}`)
-    bot.chat('(beschermingssysteem nog niet volledig)')
+    try {
+      const { protectPlayer, startCombatMonitor } = await import('../src/combat.js')
+      // ensure monitor running
+      startCombatMonitor(bot)
+      protectPlayer(bot, playerName)
+    } catch (e) {
+      bot.chat(`❌ Protect mislukt: ${e && e.message}`)
+    }
   },
 
   /**
@@ -362,6 +397,21 @@ export default {
     // TODO: Implement building/block placement
     // - Select block type from inventory
     // - Plan structure (simple patterns or schematic loading)
+
+        /**
+         * debug [on|off] - Toggle verbose debug logging
+         * @param {object} bot
+         * @param {string} [mode]
+         */
+        async debug(bot, mode = '') {
+          if (!mode) {
+            bot._debug = !bot._debug
+          } else {
+            bot._debug = (mode.toLowerCase() === 'on' || mode.toLowerCase() === 'true')
+          }
+          bot.chat(`🐞 Debug ${bot._debug ? 'ingeschakeld' : 'uitgeschakeld'}`)
+          console.log('[Debug] set debug =', bot._debug)
+        },
     // - Place blocks in sequence
     // - Handle block orientation/rotation
     bot.chat('🔨 Bouwsysteem nog niet beschikbaar')

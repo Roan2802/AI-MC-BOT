@@ -1,6 +1,9 @@
 import builtin from './builtinCommands.js'
 import { parseIntent } from '../nlp/intentParser.js'
 import { createDefaultEngine } from '../src/automation.js'
+import { startSafetyMonitor } from '../src/safetyMonitor.js'
+import { startCombatMonitor } from '../src/combat.js'
+import { tryInitEnhanced, enableAutoEat } from '../src/combatEnhanced.js'
 
 /**
  * Command router with NLP support.
@@ -17,6 +20,31 @@ export default function initCommandRouter(bot) {
   let isProcessing = false
   const automationEngine = createDefaultEngine(bot) // Initialize automation engine
   let automationEnabled = false
+
+  // Start safety monitor (lava / fire / deep-drop avoidance)
+  try {
+    startSafetyMonitor(bot, { intervalMs: 1500, searchRadius: 6 })
+    console.log('[Safety] Safety monitor gestart')
+  } catch (e) {
+    console.error('[Safety] Kon safety monitor niet starten:', e && e.message)
+  }
+
+  try {
+    startCombatMonitor(bot, { intervalMs: 1200, scanRange: 12, fleeHealth: 6 })
+    console.log('[Combat] Combat monitor gestart')
+  } catch (e) {
+    console.error('[Combat] Kon combat monitor niet starten:', e && e.message)
+  }
+
+  // Try to initialize optional enhanced combat features (plugins)
+  try {
+    tryInitEnhanced(bot).then(() => {
+      // enable auto-eat if available
+      enableAutoEat(bot, { priority: 'saturation' })
+    }).catch(err => console.warn('[CombatEnhanced] init failed:', err && err.message))
+  } catch (e) {
+    console.warn('[CombatEnhanced] could not init:', e && e.message)
+  }
 
   /**
    * Execute a queued task with proper async handling.
@@ -91,7 +119,7 @@ export default function initCommandRouter(bot) {
             bot.chat(`Error: ${e.message}`)
           }
         } else {
-          bot.chat(`Onbekend commando: !${cmd}`)
+                bot.chat(`Onbekend commando: ${cmd}`)
         }
       })
       processQueue()

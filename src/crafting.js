@@ -181,6 +181,8 @@ export async function ensureToolFor(bot, task) {
   // default to pickaxe for other mining tasks
   return ensureWoodenPickaxe(bot)
 
+}
+
 
 /**
  * Place a crafting table near the bot. Requires a crafting_table item in inventory.
@@ -433,6 +435,8 @@ export async function ensureIronPickaxe(bot) {
   }
   // fallback to stone pickaxe
   return ensureStonePickaxe(bot)
+
+}
 
 
 export default { hasPickaxe, tryCraft, ensureWoodenPickaxe }

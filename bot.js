@@ -16,5 +16,11 @@ bot.once('spawn', () => {
   } catch (e) {
     console.warn('Failed to attach movement module:', e)
   }
+  // init command router for builtins and NLP
+  try {
+    import('./commands/commandRouter.js').then(m=> m.default(bot)).catch(e=> console.warn('Failed to init command router:', e))
+  } catch (e){
+    console.warn('Failed to init command router (sync):', e)
+  }
   console.log('Agent01 is online in the world!')
 })

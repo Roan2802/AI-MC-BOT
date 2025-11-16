@@ -1,15 +1,22 @@
 import fs from 'fs'
 import path from 'path'
 import { Movements, goals } from 'mineflayer-pathfinder'
-const { GoalFollow } = goals
+const { GoalFollow, GoalBlock, GoalNear } = goals
 
 function formatPos(p){ return `${p.x.toFixed(2)} ${p.y.toFixed(2)} ${p.z.toFixed(2)}` }
 
+const managers = new WeakMap()
+
+/**
+ * Attach movement intelligence to a bot instance and store per-bot manager.
+ * @param {import('mineflayer').Bot} bot
+ * @param {object} opts
+ */
 export function attachMovement(bot, opts = {}) {
   const options = Object.assign({ followRange: 3, gpsInterval: 5000, stuckTimeout: 8000, allowTeleportCommands: false }, opts)
   const logsDir = path.resolve(process.cwd(), 'logs')
   if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true })
-  const gpsFile = path.join(logsDir, 'gps.log')
+  const gpsFile = path.join(logsDir, 'gps.jsonl')
 
   let followTarget = null
   let followGoal = null
@@ -23,8 +30,16 @@ export function attachMovement(bot, opts = {}) {
     if (gpsTimer) return
     gpsTimer = setInterval(()=>{
       const pos = bot.entity.position
-      const line = `${new Date().toISOString()} BOT ${formatPos(pos)}${followTarget && followTarget.username ? ` FOLLOWING ${followTarget.username} at ${bot.players[followTarget.username] && bot.players[followTarget.username].entity ? formatPos(bot.players[followTarget.username].entity.position) : 'unknown'}` : ''}\n`
-      fs.appendFile(gpsFile, line, ()=>{})
+      const entry = {
+        ts: new Date().toISOString(),
+        bot: { x: pos.x, y: pos.y, z: pos.z },
+        following: null
+      }
+      if (followTarget && followTarget.username) {
+        const p = bot.players[followTarget.username] && bot.players[followTarget.username].entity
+        entry.following = { username: followTarget.username, pos: p ? { x: p.position.x, y: p.position.y, z: p.position.z } : null }
+      }
+      fs.appendFile(gpsFile, JSON.stringify(entry) + '\n', ()=>{})
     }, options.gpsInterval)
   }
   function stopGPS(){ if(gpsTimer){clearInterval(gpsTimer); gpsTimer=null} }
@@ -138,6 +153,46 @@ export function attachMovement(bot, opts = {}) {
     stopFollow,
     options
   }
+}
+
+/** Create and store manager for a bot. */
+function createManager(bot, opts){
+  if (managers.has(bot)) return managers.get(bot)
+  const mgr = attachMovement(bot, opts)
+  managers.set(bot, mgr)
+  return mgr
+}
+
+/** Public API wrappers that other modules can call. */
+export function followPlayer(bot, playerName){
+  const mgr = createManager(bot)
+  const player = bot.players[playerName] && bot.players[playerName].entity
+  if (!player) throw new Error(`Player ${playerName} not found`)
+  return mgr.startFollow(player)
+}
+
+export function goToPlayer(bot, playerName){
+  const player = bot.players[playerName] && bot.players[playerName].entity
+  if (!player) throw new Error(`Player ${playerName} not found`)
+  const movements = new Movements(bot)
+  bot.pathfinder.setMovements(movements)
+  const goal = new GoalNear(player.position.x, player.position.y, player.position.z, 2)
+  bot.pathfinder.setGoal(goal)
+}
+
+export function stay(bot){
+  if (managers.has(bot)) {
+    const m = managers.get(bot)
+    m.stopFollow()
+  }
+  try { bot.pathfinder.setGoal(null) } catch(e){}
+}
+
+export function moveToPosition(bot, position){
+  const movements = new Movements(bot)
+  bot.pathfinder.setMovements(movements)
+  const goal = new GoalBlock(position.x, position.y, position.z)
+  bot.pathfinder.setGoal(goal)
 }
 
 export default attachMovement

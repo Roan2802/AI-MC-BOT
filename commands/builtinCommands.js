@@ -15,6 +15,7 @@ import { smeltOres, createDriedKelp, createDriedKelpBlock, getJobQueue, buildSma
 import { harvestWood } from '../src/wood.js'
 import { createCharcoal } from '../src/smelting.js'
 import { mineOres } from '../src/mining.js'
+import { isResourceDepleted, getWornTools, getInventoryStatus, getTimeOfDay } from '../src/automation.js'
 
 /**
  * Format position for display.
@@ -262,6 +263,31 @@ export default {
   },
 
   /**
+   * autostatus - Show automation intelligence status (resources, tools, inventory)
+   * @param {object} bot
+   */
+  async autostatus(bot) {
+    try {
+      const logStatus = isResourceDepleted(bot, 'log', 16)
+      const fuelStatus = isResourceDepleted(bot, 'coal', 1)
+      const invStatus = getInventoryStatus(bot, 80)
+      const timeStatus = getTimeOfDay(bot)
+      const wornTools = getWornTools(bot, 30)
+
+      bot.chat(`📊 Auto Status:`)
+      bot.chat(`  Logs: ${logStatus.current} (${logStatus.depleted ? 'ℹ️ LOW' : '✅ OK'})`)
+      bot.chat(`  Fuel: ${fuelStatus.current} coal (${fuelStatus.depleted ? 'ℹ️ LOW' : '✅ OK'})`)
+      bot.chat(`  Inventory: ${invStatus.usedSlots}/${invStatus.totalSlots} (${invStatus.percent}%) ${invStatus.full ? '⚠️ FULL' : '✅ OK'}`)
+      bot.chat(`  Time: ${timeStatus.isNight ? '🌙 Night' : '☀️ Day'} (${timeStatus.time})`)
+      if (wornTools.length > 0) {
+        bot.chat(`  ⚠️ Worn tools: ${wornTools.map(t => `${t.name}(${t.percent}%)`).join(', ')}`)
+      }
+    } catch (e) {
+      bot.chat(`❌ Auto-status mislukt: ${e && e.message}`)
+    }
+  },
+
+  /**
    * protect <playerName> - Guard a player (TODO: implement combat/protection).
    * @param {object} bot
    * @param {string} playerName
@@ -409,6 +435,8 @@ export default {
       '!makeironpickaxe - Maak iron pickaxe met ertsen',
       '!fueljobs - Start geautomatiseerde bulk brandstof-productie',
       '!fuelqueue - Toon status van brandstof job queue',
+      '!autostatus - Toon automatisering status (resources, tools, inventory)',
+      '!auto - Toggle automatisering aan/uit',
       '!protect <naam> - Bescherm speler',
       '!sethome - Thuis instellen',
       '!home - Ga naar thuis',

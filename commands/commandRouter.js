@@ -1,5 +1,6 @@
 import builtin from './builtinCommands.js'
 import { parseIntent } from '../nlp/intentParser.js'
+import { createDefaultEngine } from '../src/automation.js'
 
 /**
  * Command router with NLP support.
@@ -14,6 +15,8 @@ import { parseIntent } from '../nlp/intentParser.js'
 export default function initCommandRouter(bot) {
   const taskQueue = [] // TODO: Implement task queue for spam prevention
   let isProcessing = false
+  const automationEngine = createDefaultEngine(bot) // Initialize automation engine
+  let automationEnabled = false
 
   /**
    * Execute a queued task with proper async handling.
@@ -34,6 +37,24 @@ export default function initCommandRouter(bot) {
     isProcessing = false
   }
 
+  // Periodic automation check (every 10 seconds)
+  setInterval(async () => {
+    if (!automationEnabled) return
+    try {
+      const triggered = automationEngine.evaluateRules()
+      if (triggered.length > 0) {
+        await automationEngine.executeRules(triggered, false) // Queue for processing
+      }
+      // Process queued automation tasks
+      const completed = await automationEngine.processTasks()
+      if (completed > 0) {
+        console.log(`[Automation] Processed ${completed} queued tasks`)
+      }
+    } catch (e) {
+      console.error('[Automation] Periodic check failed:', e.message)
+    }
+  }, 10000)
+
   bot.on('chat', (username, message) => {
     if (username === bot.username) return
 
@@ -46,7 +67,19 @@ export default function initCommandRouter(bot) {
 
         if (cmd === 'stop') {
           // TODO: Clear entire queue and stop all tasks
+          automationEnabled = false
           bot.chat('Stoppend...')
+          return
+        }
+
+        if (cmd === 'auto' || cmd === 'automation') {
+          automationEnabled = !automationEnabled
+          bot.chat(`Automatisering ${automationEnabled ? 'ingeschakeld ✅' : 'uitgeschakeld ❌'}`)
+          return
+        }
+
+        if (cmd === 'autostatus') {
+          bot.chat(automationEngine.status())
           return
         }
 

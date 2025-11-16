@@ -21,9 +21,19 @@ Alle commando's kunnen direct worden gegeven door `!` vooraan te zetten:
 - `!come <spelernaam>` — Bot navigeert naar een speler
 - `!stay` — Bot blijft op huidige plek staan
 - `!mine [bron]` — Bot zoekt en mined resource (standaard: oak_log)
+- `!chop` — Hak hout in de buurt (whole-tree felling)
+- `!smelt` — Smelt beschikbare ertsen in oven (craft/place oven if needed)
+- `!makecharcoal` — Maak charcoal van logs (bestift fuel)
+- `!mineores` — Mijn meerdere ertsen (vein-mining)
+- `!makestonepickaxe` — Craft stone pickaxe (upgrade)
+- `!makeironpickaxe` — Craft iron pickaxe (vereist ijzer ingots)
+- `!makekelpblock` — Droog kelp en maak dried_kelp_blocks
+- `!fueljobs` — Start geautomatiseerde bulk brandstof-productie
+- `!fuelqueue` — Toon status van brandstof job queue
 - `!protect <spelernaam>` — Bot beschermt een speler (TODO)
 - `!sethome` — Huislocatie opslaan
 - `!home` — Bot gaat naar het huis
+- `!store` — Ga naar huis en sla items op (best-effort)
 - `!gps` — Logga huidge positie naar logs/gps.jsonl
 - `!stop` — Stop alle beweging onmiddellijk
 - `!help` — Toon beschikbare commando's
@@ -97,7 +107,50 @@ npm start
 USE_OLLAMA=1 npm start
 ```
 
-## Development
+### Quick Test Setup
+
+**Vereisten:**
+- Minecraft server (localhost:25565) of gebruiken van [Docker Minecraft](https://hub.docker.com/r/itzg/minecraft-server)
+- Node.js 16+
+
+**Test Stappen:**
+
+1. **Start bot:**
+```bash
+npm start
+```
+
+2. **Join server als speler (e.g., Steve) en test commando's:**
+
+```
+!hello                    # Groet van bot
+!status                   # Toon positie & health
+!sethome                  # Sla huislocatie op
+!chop                     # Hak hout (zoekt dichtbijzijnde boom)
+!makecharcoal             # Maak charcoal (vereist furnace & fuel)
+!mineores                 # Mijn ertsen (vein-mining)
+!makestonepickaxe         # Upgrade naar stone pickaxe
+!smelt                    # Smelt ores naar ingots
+!store                    # Ga naar huis en sla spullen op
+!follow Steve             # Volg speler Steve
+!come Steve               # Kom naar speler
+!stop                     # Stop beweging
+```
+
+3. **Batch Fuel Production (Resource MVP demo):**
+
+```
+!fueljobs                 # Analyze inventory → plan → execute batch jobs
+!fuelqueue                # Check queue status
+```
+
+4. **Natural Language (optioneel):**
+
+```
+agent, volg mij           # NLP: volg
+agent, hak hout           # NLP: chop
+agent, ga naar huis       # NLP: home
+```
 
 ### Syntax Check
 ```bash

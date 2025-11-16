@@ -7,7 +7,7 @@
 
 import fs from 'fs'
 import path from 'path'
-import { moveToPosition } from './movement.js'
+import { goTo } from './navigation.js'
 
 const homes = new WeakMap()
 const dataDir = path.resolve(process.cwd(), 'data')
@@ -86,7 +86,8 @@ export function goHome(bot) {
     throw new Error('Geen thuis ingesteld')
   }
   console.log('[Memory] Going home...')
-  return moveToPosition(bot, pos)
+  // Use navigation.goTo which returns a Promise<boolean>
+  return goTo(bot, pos, { timeout: 45000, maxRetries: 3 })
 }
 
 export default { setHome, getHome, goHome }

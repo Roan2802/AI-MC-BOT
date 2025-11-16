@@ -6,9 +6,15 @@
  */
 
 import { followPlayer, goToPlayer, stop as stopMovement, moveToPosition, stay } from '../src/movement.js'
-import { mineResource } from '../src/mining.js'
+import { mineResource, mineOres } from '../src/mining.js'
+import { ensureWoodenPickaxe, hasPickaxe, ensureToolFor, ensureStonePickaxe, ensureIronPickaxe } from '../src/crafting.js'
 import { setHome, getHome, goHome } from '../src/memory.js'
 import { goTo, selectSafeTarget } from '../src/navigation.js'
+import { returnHomeAndStore } from '../src/storage.js'
+import { smeltOres, createDriedKelp, createDriedKelpBlock, getJobQueue, buildSmartFuelPlan } from '../src/smelting.js'
+import { harvestWood } from '../src/wood.js'
+import { createCharcoal } from '../src/smelting.js'
+import { mineOres } from '../src/mining.js'
 
 /**
  * Format position for display.
@@ -112,12 +118,147 @@ export default {
   async mine(bot, resource = 'oak_log') {
     bot.chat(`⛏️ Ik zoek naar ${resource}...`)
     try {
+      // Ensure we have an appropriate tool (axe for wood, pickaxe for stone/ore)
+      const taskType = /wood|log|oak|plank/.test(resource) ? 'wood' : (/stone|ore|coal|iron/.test(resource) ? 'stone' : 'stone')
+      const okTool = await ensureToolFor(bot, taskType)
+      if (!okTool) {
+        bot.chat('❌ Kon het benodigde gereedschap niet maken, stop.')
+        return
+      }
       await mineResource(bot, resource, 20)
       bot.chat(`✅ Klaar met hakken van ${resource}`)
     } catch (e) {
-      bot.chat(`❌ Kon geen ${resource} vinden`)
-      console.error('[Mining] Error:', e.message)
+      bot.chat(`❌ Kon geen ${resource} vinden: ${e.message}`)
+      console.error('[Mining] Error:', e && e.message)
     }
+  },
+
+  /**
+   * smelt - Smelt alle beschikbare ertsen in een nearby oven (best-effort)
+   * @param {object} bot
+   */
+  async smelt(bot) {
+    try {
+      bot.chat('🔥 Probeer ertsen te smelten...')
+      await smeltOres(bot, 20)
+      bot.chat('✅ Smeltproces voltooid (best-effort)')
+    } catch (e) {
+      bot.chat(`❌ Smelten mislukt: ${e && e.message}`)
+    }
+  },
+
+  /**
+   * chop - Harvest nearby wood (best-effort)
+   * @param {object} bot
+   */
+  async chop(bot) {
+    try {
+      bot.chat('🌲 Ik ga hout hakken...')
+      const count = await harvestWood(bot, 20, 32)
+      bot.chat(`✅ Klaar met hakken: ${count} blokken verzameld`)
+    } catch (e) {
+      bot.chat(`❌ Hout hakken mislukt: ${e && e.message}`)
+    }
+  },
+
+  /**
+   * makecharcoal - Produce charcoal from logs using nearby furnace (best-effort)
+   * @param {object} bot
+   */
+  async makecharcoal(bot) {
+    try {
+      bot.chat('🔥 Maak charcoal van logs...')
+      const got = await createCharcoal(bot, 8, 20)
+      bot.chat(`✅ Charcoal geproduceerd: ${got}`)
+    } catch (e) {
+      bot.chat(`❌ Charcoal maken mislukt: ${e && e.message}`)
+    }
+  },
+
+  /**
+   * mineores - Zoek en mijn meerdere ertsen (best-effort)
+   * @param {object} bot
+   */
+  async mineores(bot) {
+    try {
+      bot.chat('⛏️ Ik ga op zoek naar ertsen...')
+      const n = await mineOres(bot, 32, 20)
+      bot.chat(`✅ Klaar met mijnen: ${n} blokken`)      
+    } catch (e) {
+      bot.chat(`❌ Mijnproces mislukt: ${e && e.message}`)
+    }
+  },
+
+  /**
+   * makestonepickaxe - Craft a stone pickaxe if resources available
+   * @param {object} bot
+   */
+  async makestonepickaxe(bot) {
+    try {
+      bot.chat('🔧 Probeer stone pickaxe te maken...')
+      const ok = await ensureStonePickaxe(bot)
+      if (ok) bot.chat('✅ Stone pickaxe beschikbaar')
+      else bot.chat('❌ Kon geen stone pickaxe maken')
+    } catch (e) {
+      bot.chat(`❌ Maken mislukt: ${e && e.message}`)
+    }
+  },
+
+  /**
+   * makekelpblock - Dry kelp and craft dried_kelp_block if possible
+   * @param {object} bot
+   */
+  async makekelpblock(bot) {
+    try {
+      bot.chat('🌊 Droog kelp en maak kelp-blocks...')
+      const dried = await createDriedKelp(bot, 32, 20)
+      const crafted = await createDriedKelpBlock(bot)
+      bot.chat(`✅ Gedroogd kelp: ${dried}, blocks gemaakt: ${crafted ? 'ja' : 'nee'}`)
+    } catch (e) {
+      bot.chat(`❌ Kelp block maken mislukt: ${e && e.message}`)
+    }
+  },
+
+  /**
+   * makeironpickaxe - Craft an iron pickaxe if resources available
+   * @param {object} bot
+   */
+  async makeironpickaxe(bot) {
+    try {
+      bot.chat('⛏️ Probeer iron pickaxe te maken...')
+      const ok = await ensureStonePickaxe(bot)
+      if (ok) bot.chat('✅ Iron pickaxe beschikbaar (of fallback)')
+      else bot.chat('❌ Kon geen iron pickaxe maken')
+    } catch (e) {
+      bot.chat(`❌ Maken mislukt: ${e && e.message}`)
+    }
+  },
+
+  /**
+   * fueljobs - Start automated bulk fuel production based on inventory
+   * @param {object} bot
+   */
+  async fueljobs(bot) {
+    try {
+      bot.chat('🔥 Bouw slimme brandstof-productie plan...')
+      const queue = buildSmartFuelPlan(bot)
+      bot.chat(`📋 Plan: ${queue.jobs.map(j => `${j.type}(${j.amount})`).join(', ')}`)
+      bot.chat('▶️ Start uitvoering...')
+      await queue.runAll(bot)
+      bot.chat('✅ Brandstof-jobs voltooid!')
+    } catch (e) {
+      bot.chat(`❌ Brandstof-jobs mislukt: ${e && e.message}`)
+    }
+  },
+
+  /**
+   * fuelqueue - Show current fuel job queue status
+   * @param {object} bot
+   */
+  async fuelqueue(bot) {
+    const queue = getJobQueue()
+    const status = queue.status()
+    bot.chat(`📊 Fuel Queue Status: ${status}`)
   },
 
   /**
@@ -169,6 +310,20 @@ export default {
       bot.chat('✅ Ik ben thuis!')
     } catch (e) {
       bot.chat(`Kon niet naar huis gaan: ${e.message}`)
+    }
+  },
+
+  /**
+   * store - Return home and store collected items (best-effort)
+   * @param {object} bot
+   */
+  async store(bot) {
+    try {
+      bot.chat('Ga naar huis en sla spullen op...')
+      await returnHomeAndStore(bot)
+      bot.chat('Opslag voltooid (best-effort).')
+    } catch (e) {
+      bot.chat('Kon items niet opslaan.')
     }
   },
 
@@ -245,6 +400,15 @@ export default {
       '!come <naam> - Kom naar speler',
       '!stay - Blijf hier',
       '!mine [bron] - Mijn resource (standaard: oak_log)',
+      '!smelt - Smelt beschikbare ertsen in oven (best-effort)',
+      '!chop - Hak hout in de buurt (best-effort)',
+      '!makecharcoal - Maak charcoal van logs (gebruik oven)',
+      '!mineores - Mijn meerdere ertsen (best-effort)',
+      '!makestonepickaxe - Maak een stone pickaxe als mogelijk',
+      '!makekelpblock - Droog kelp en maak dried_kelp_blocks',
+      '!makeironpickaxe - Maak iron pickaxe met ertsen',
+      '!fueljobs - Start geautomatiseerde bulk brandstof-productie',
+      '!fuelqueue - Toon status van brandstof job queue',
       '!protect <naam> - Bescherm speler',
       '!sethome - Thuis instellen',
       '!home - Ga naar thuis',

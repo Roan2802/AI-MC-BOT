@@ -1,0 +1,14 @@
+{
+  "name": "ai-mc-bot",
+  "version": "0.1.0",
+  "description": "AI controlled Mineflayer bot",
+  "main": "bot.js",
+  "type": "module",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "mineflayer": "^4.13.0",
+    "mineflayer-pathfinder": "^2.2.0"
+  }
+}

@@ -346,45 +346,33 @@ export default {
    * @param {string} playerName
    */
   async protect(bot, playerName) {
+    const { initCombatSystem } = require('../src/combat.js')
+    // Combat config kan eventueel uit config-bestand komen
+    const combatConfig = {
+      detectionRadius: 12,
+      priorityRadius: 6,
+      maxHuntDistance: 14,
+      followDistance: 2,
+      creeperEvadeRadius: 6,
+      ownerSafeHealth: 12,
+      resumeFollowMs: 1200,
+      enablePvpDefense: true
+    }
+    if (!bot._combatSystem) {
+      bot._combatSystem = initCombatSystem(bot, combatConfig)
+    }
     if (!playerName) {
-      // toggle off
-      // stop protect if running
-      try {
-        const { stopProtect } = await import('../src/combat.js')
-        stopProtect(bot)
-        // avoid spamming the same protect message
-        bot._lastProtectMsg = bot._lastProtectMsg || 0
-        if (Date.now() - bot._lastProtectMsg > 5000) {
-          bot.chat('🛡️ Protect uitgeschakeld')
-          bot._lastProtectMsg = Date.now()
-        }
-      } catch (e) {
-        bot.chat('Kon protect niet uitschakelen')
-      }
+      bot._combatSystem.clearOwner()
+      bot.chat('🛡️ Protect uitgeschakeld')
       return
     }
-    try {
-      const { protectPlayer, startCombatMonitor } = await import('../src/combat.js')
-      // verify player exists in current world
-      const p = bot.players && bot.players[playerName]
-      if (!p || !p.entity) {
-        bot.chat(`❌ Speler ${playerName} niet gevonden`)
-        return
-      }
-      // ensure monitor running
-      startCombatMonitor(bot)
-      const ok = protectPlayer(bot, playerName)
-      if (ok) {
-        bot._lastProtectMsg = bot._lastProtectMsg || 0
-        if (Date.now() - bot._lastProtectMsg > 5000) {
-          bot.chat(`🛡️ Protect mode: bewaking van ${playerName}`)
-          bot._lastProtectMsg = Date.now()
-        }
-      }
-      else bot.chat('❌ Protect niet gestart')
-    } catch (e) {
-      bot.chat(`❌ Protect mislukt: ${e && e.message}`)
+    const p = bot.players && bot.players[playerName]
+    if (!p || !p.entity) {
+      bot.chat(`❌ Speler ${playerName} niet gevonden`)
+      return
     }
+    bot._combatSystem.setOwner(playerName)
+    bot.chat(`🛡️ Protect mode: bewaking van ${playerName}`)
   },
 
   /**

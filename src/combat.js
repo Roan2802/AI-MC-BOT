@@ -1,250 +1,275 @@
-import { findNearbySafePosition } from '../utils/safety.js'
-import { goTo } from './navigation.js'
-import { tryInitEnhanced, enhancedAttack, enableAutoEat } from './combatEnhanced.js'
-import pathfinderPkg from 'mineflayer-pathfinder'
-const { Movements, goals } = pathfinderPkg
-const { GoalFollow } = goals
-import { followPlayer, stop as stopMovement } from './movement.js'
 
-export function isHostile(entity) {
-  if (!entity) return false
-  // ensure it's a mob
-  if (entity.type !== 'mob') return false
-  const hostileNames = ['zombie', 'skeleton', 'creeper', 'spider', 'pillager', 'hoglin', 'drowned', 'phantom', 'enderman', 'witch']
-  const name = (entity.name || (entity.mobType || '')).toString().toLowerCase()
-  return hostileNames.some(h => name.includes(h))
-}
+// GuardianBot Combat System v1 – Hybrid Tactical
+const { goals: { GoalFollow } } = require('mineflayer-pathfinder')
 
-async function equipBestWeapon(bot) {
-  try {
-    const items = bot.inventory.items()
-    // prefer sword
-    let weapon = items.find(i => i.name && i.name.includes('sword'))
-    if (!weapon) weapon = items.find(i => i.name && i.name.includes('axe'))
-    if (weapon) {
-      if (bot._debug) console.log('[Combat.equipBestWeapon] equipping', weapon.name)
-      await bot.equip(weapon, 'hand')
-      if (bot._debug) console.log('[Combat.equipBestWeapon] ✅ equipped', weapon.name)
-      return true
-    } else {
-      if (bot._debug) console.log('[Combat.equipBestWeapon] ⚠️ no sword or axe found in inventory')
-    }
-  } catch (e) {
-    console.warn('[Combat.equipBestWeapon] equip error:', e && e.message)
+/**
+ * @typedef {Object} CombatConfig
+ * @property {number} detectionRadius
+ * @property {number} priorityRadius
+ * @property {number} maxHuntDistance
+ * @property {number} followDistance
+ * @property {number} creeperEvadeRadius
+ * @property {number} ownerSafeHealth
+ * @property {number} resumeFollowMs
+ * @property {boolean} enablePvpDefense
+ */
+
+function initCombatSystem(bot, config) {
+  const state = {
+    mode: 'FOLLOW',
+    ownerName: null,
+    currentTargetId: null,
+    lastThreatTime: 0
   }
-  return false
-}
 
-async function approachAndAttack(bot, entity, opts = {}) {
-  if (!entity || !entity.position) return false
-  try {
-    const targetPos = entity.position
-    if (bot._debug) console.log('[Combat.approachAndAttack] approaching', entity.name, 'at', targetPos)
-    // approach within 2.5 blocks
-    await goTo(bot, { x: targetPos.x, y: targetPos.y, z: targetPos.z }, { timeout: opts.timeout || 15000 })
-    if (bot._debug) console.log('[Combat.approachAndAttack] ✅ reached target')
-    await equipBestWeapon(bot)
-    // simple attack loop
-    const start = Date.now()
-    let attackCount = 0
-    while (entity && entity.health > 0 && Date.now() - start < (opts.maxDuration || 30000)) {
-      if (bot.entity.position.distanceTo(entity.position) > 3.5) {
-        if (bot._debug) console.log('[Combat.approachAndAttack] target too far, re-approaching')
-        // re-approach
-        await goTo(bot, { x: entity.position.x, y: entity.position.y, z: entity.position.z }, { timeout: 10000 })
+  const HOSTILE_MOBS = [
+    'Zombie', 'Husk', 'Drowned',
+    'Skeleton', 'Stray', 'Wither Skeleton',
+    'Spider', 'Cave Spider',
+    'Pillager', 'Vindicator', 'Evoker',
+    'Ravager', 'Slime', 'Magma Cube',
+    'Enderman', 'Endermite'
+  ]
+
+  function log(msg, extra) {
+    const DEBUG = true
+    if (!DEBUG) return
+    const time = new Date().toISOString()
+    console.log(`[Combat ${time}] ${msg}`, extra || '')
+  }
+
+  function getOwnerEntity() {
+    if (!state.ownerName) return null
+    return bot.players[state.ownerName]?.entity ?? null
+  }
+
+  function getHealth(entity) {
+    return typeof entity.health === 'number' ? entity.health : 20
+  }
+
+  function findBestThreat() {
+    const owner = getOwnerEntity()
+    if (!owner) return null
+    let best = null
+    let bestScore = 0
+    for (const id in bot.entities) {
+      const e = bot.entities[id]
+      if (!e || e === bot.entity) continue
+      if (e.type !== 'mob') continue
+      if (!e.mobType) continue
+      const distOwner = owner.position.distanceTo(e.position)
+      if (distOwner > config.detectionRadius) continue
+      const isCreeper = e.mobType.includes('Creeper')
+      const isHostile = HOSTILE_MOBS.some(m => e.mobType.includes(m))
+      if (!isCreeper && !isHostile) continue
+      let base = 1
+      if (isCreeper) base = 100
+      else if (e.mobType.includes('Skeleton') || e.mobType.includes('Pillager')) base = 40
+      else if (e.mobType.includes('Spider')) base = 25
+      else base = 15
+      const distanceFactor = Math.max(0, (config.detectionRadius - distOwner))
+      const priorityBoost = distOwner <= config.priorityRadius ? 30 : 0
+      const score = base + distanceFactor + priorityBoost
+      if (score > bestScore) {
+        bestScore = score
+        best = e
       }
-      try {
-        if (typeof bot.attack === 'function') {
-          bot.attack(entity)
-          attackCount++
-          if (bot._debug) console.log('[Combat.approachAndAttack] attacked (count:', attackCount, ')')
-        } else {
-          // fallback: swing arm
-          bot.swingArm()
-          attackCount++
-          if (bot._debug) console.log('[Combat.approachAndAttack] swung arm (count:', attackCount, ')')
-        }
-      } catch (e) {
-        console.warn('[Combat.approachAndAttack] attack attempt failed:', e && e.message)
-      }
-      await new Promise(r => setTimeout(r, 700))
     }
-    if (bot._debug) console.log('[Combat.approachAndAttack] ✅ finished attacking', entity.name, 'total attacks:', attackCount)
+    return best
+  }
+
+  function isOwnerSafe() {
+    const owner = getOwnerEntity()
+    if (!owner) return false
+    if (getHealth(owner) < config.ownerSafeHealth) return false
+    for (const id in bot.entities) {
+      const e = bot.entities[id]
+      if (!e || e.type !== 'mob' || !e.mobType) continue
+      const isCreeper = e.mobType.includes('Creeper')
+      const isHostile = HOSTILE_MOBS.some(m => e.mobType.includes(m))
+      if (!isCreeper && !isHostile) continue
+      const distOwner = owner.position.distanceTo(e.position)
+      if (distOwner <= config.priorityRadius) {
+        return false
+      }
+    }
     return true
-  } catch (e) {
-    console.warn('[Combat.approachAndAttack] error:', e && e.message)
-    return false
   }
-}
 
-export function scanForHostiles(bot, range = 12) {
-  if (!bot || !bot.entity || !bot.entity.position) return null
-  const entities = Object.values(bot.entities || {})
-  const hostiles = entities.filter(e => e && e.type === 'mob' && isHostile(e) && bot.entity.position.distanceTo(e.position) <= range)
-  hostiles.sort((a, b) => bot.entity.position.distanceTo(a.position) - bot.entity.position.distanceTo(b.position))
-  if (bot._debug && hostiles.length > 0) {
-    console.log('[Combat.scanForHostiles] found', hostiles.length, 'hostile(s) within', range, 'blocks:',
-      hostiles.map(h => `${h.name} @ ${Math.round(h.position.x)},${h.position.y},${h.position.z}`).join('; '))
-  }
-  return hostiles[0] || null
-}
-
-export function findHostileNear(bot, centerPos, range = 10) {
-  if (!bot || !centerPos) return null
-  const entities = Object.values(bot.entities || {})
-  const hostiles = entities.filter(e =>
-    e &&
-    e.type === 'mob' &&
-    isHostile(e) &&
-    centerPos.distanceTo &&
-    centerPos.distanceTo(e.position) <= range
-  )
-  hostiles.sort((a, b) => centerPos.distanceTo(a.position) - centerPos.distanceTo(b.position))
-  return hostiles[0] || null
-}
-
-export function startCombatMonitor(bot, opts = {}) {
-  const interval = opts.intervalMs || 2000  // Increase to 2000ms to reduce re-calibration
-  if (bot._combatMonitorId) return
-  bot._protectTarget = null
-  bot._lastFollowGoal = null  // Track current follow goal to avoid re-setting
-  bot._combatMonitorId = setInterval(async () => {
+  async function equipBestWeapon() {
     try {
-      if (!bot.entity) return
-      // flee when low health
-      const lowHealth = (bot.health || 20) <= (opts.fleeHealth || 6)
-      if (lowHealth) {
-        const safe = findNearbySafePosition(bot, bot.entity.position, 8)
-        if (safe) {
-          if (bot._debug) console.log('[Combat] ❤️ low health detected, fleeing to', safe)
-          bot.chat('❤️ Laag leven: vluchten naar veilige plek')
-          if (bot.pathfinder) bot.pathfinder.setGoal(null)
-          await goTo(bot, safe, { timeout: 15000, checkSafety: false })
-        }
+      const items = bot.inventory.items()
+      const swords = items.filter(i => i.name.includes('sword'))
+      const axes = items.filter(i => i.name.includes('axe'))
+      if (swords.length > 0) {
+        await bot.equip(swords.sort((a, b) => b.attackDamage - a.attackDamage)[0], 'hand')
+        log('Equipped best sword')
+      } else if (axes.length > 0) {
+        await bot.equip(axes.sort((a, b) => b.attackDamage - a.attackDamage)[0], 'hand')
+        log('Equipped best axe')
+      }
+    } catch (err) {
+      log('equipBestWeapon error', err)
+    }
+  }
+
+  async function ensureArmor() {
+    if (!bot.armorManager) return
+    try {
+      await bot.armorManager.equipAll()
+    } catch (err) {
+      log('equipAll armor error', err)
+    }
+  }
+
+  function enterFollowMode() {
+    const owner = getOwnerEntity()
+    if (!owner) return
+    state.mode = 'FOLLOW'
+    state.currentTargetId = null
+    bot.pvp?.stop()
+    log('STATE -> FOLLOW')
+    bot.pathfinder.setGoal(new GoalFollow(owner, config.followDistance), true)
+  }
+
+  async function enterCombatMode(target) {
+    if (state.mode === 'COMBAT' && state.currentTargetId === target.id) return
+    state.mode = 'COMBAT'
+    state.currentTargetId = target.id
+    log(`STATE -> COMBAT vs ${target.mobType || target.username}`)
+    await ensureArmor()
+    await equipBestWeapon()
+    bot.pvp.attack(target)
+  }
+
+  async function enterHuntMode(target) {
+    if (state.mode === 'HUNT' && state.currentTargetId === target.id) return
+    state.mode = 'HUNT'
+    state.currentTargetId = target.id
+    log(`STATE -> HUNT vs ${target.mobType || target.username}`)
+    await ensureArmor()
+    await equipBestWeapon()
+    bot.pvp.attack(target)
+  }
+
+  function handleCreeper(creeper) {
+    const owner = getOwnerEntity()
+    if (!owner) return
+    const dist = bot.entity.position.distanceTo(creeper.position)
+    if (dist <= config.creeperEvadeRadius) {
+      bot.pvp.stop()
+      state.mode = 'FOLLOW'
+      state.currentTargetId = null
+      log('CREEPER EVADE, terug naar owner.')
+      bot.pathfinder.setGoal(new GoalFollow(owner, config.followDistance + 2), true)
+    } else {
+      if (state.mode !== 'FOLLOW') enterFollowMode()
+    }
+  }
+
+  bot.on('physicTick', () => {
+    if (!state.ownerName) return
+    const owner = getOwnerEntity()
+    if (!owner) {
+      log('Owner not found, clearing owner.')
+      clearOwner()
+      return
+    }
+    const now = Date.now()
+    const threat = findBestThreat()
+    if (threat) {
+      state.lastThreatTime = now
+      const distOwnerThreat = owner.position.distanceTo(threat.position)
+      const distBotThreat = bot.entity.position.distanceTo(threat.position)
+      const isCreeper = threat.mobType && threat.mobType.includes('Creeper')
+      if (isCreeper) {
+        handleCreeper(threat)
         return
       }
-
-      // If protecting a player, scan near that player first
-      let target = null
-      if (bot._protectTarget) {
-        // Prefer bot.players lookup (more reliable) then fallback to entities scan
-        const playerRecord = bot.players && bot.players[bot._protectTarget]
-        let playerEnt = playerRecord && playerRecord.entity
-        if (!playerEnt) {
-          // fallback: find player entity by username in entities
-          playerEnt = Object.values(bot.entities || {}).find(e => e && e.type === 'player' && (e.username === bot._protectTarget || e.name === bot._protectTarget || (e.displayName && e.displayName.getText && e.displayName.getText() === bot._protectTarget)))
+      const ownerSafe = isOwnerSafe()
+      if (distOwnerThreat <= config.priorityRadius || !ownerSafe) {
+        if (state.mode !== 'COMBAT' || state.currentTargetId !== threat.id) {
+          enterCombatMode(threat)
         }
-        if (!playerEnt) {
-          if (bot._debug) console.log('[Combat.protectPlayer] protect target present but player entity not found for', bot._protectTarget, 'bot.players keys:', Object.keys(bot.players || {}))
-          bot._lastFollowGoal = null
-        } else {
-          if (bot._debug) console.log('[Combat.protectPlayer] scanning around', bot._protectTarget, 'at', playerEnt.position)
-          // use findHostileNear for more reliable 10-block protect range
-          target = findHostileNear(bot, playerEnt.position, opts.protectRange || 10)
-          if (target && bot._debug) console.log('[Combat.protectPlayer] threat to', bot._protectTarget, 'found:', target.name, 'distance:', playerEnt.position.distanceTo(target.position))
-          
-          // Auto-follow protected player if no immediate threat
-          if (!target) {
-            const distToPlayer = bot.entity.position.distanceTo(playerEnt.position)
-            if (distToPlayer > 3) {
-              // Only set follow goal if it changed or we don't have one
-              const playerKey = `${playerEnt.id || playerEnt.username}`
-              if (bot._lastFollowGoal !== playerKey) {
-                try {
-                  if (bot.pathfinder) {
-                    bot.pathfinder.setMovements(new Movements(bot))
-                    bot.pathfinder.setGoal(new GoalFollow(playerEnt, 2.5))
-                    bot._lastFollowGoal = playerKey
-                    if (bot._debug) console.log('[Combat.protectPlayer] set follow goal for', bot._protectTarget)
-                  }
-                } catch (e) {
-                  if (bot._debug) console.warn('[Combat.protectPlayer] could not follow:', e && e.message)
-                  bot._lastFollowGoal = null
-                }
-              }
-            } else {
-              // Close enough, stop goal
-              if (bot._lastFollowGoal !== null) {
-                if (bot.pathfinder) bot.pathfinder.setGoal(null)
-                bot._lastFollowGoal = null
-                if (bot._debug) console.log('[Combat.protectPlayer] close enough, stop goal')
-              }
-            }
-          } else {
-            // Threat detected, clear follow
-            bot._lastFollowGoal = null
-          }
+      } else if (
+        distOwnerThreat <= config.maxHuntDistance &&
+        ownerSafe
+      ) {
+        if (state.mode !== 'HUNT' || state.currentTargetId !== threat.id) {
+          enterHuntMode(threat)
+        }
+      } else {
+        if (state.mode !== 'FOLLOW') {
+          enterFollowMode()
         }
       }
-
-      // otherwise scan global
-      if (!target) target = scanForHostiles(bot, opts.scanRange || 12)
-
-      if (target) {
-        bot.chat(`⚔️ Vijand gedetecteerd: ${target.name}. Engaging...`)
-        if (bot._debug) console.log('[Combat] target found:', target.name, 'health:', target.health)
-        bot._lastFollowGoal = null  // Clear follow state during combat
-        try {
-          if (bot.pathfinder) bot.pathfinder.setGoal(null)
-          // prefer enhanced attack if available
-          if (enhancedAttack && typeof enhancedAttack === 'function') {
-            if (bot._debug) console.log('[Combat] trying enhancedAttack')
-            const ok = enhancedAttack(bot, target)
-            if (!ok) {
-              if (bot._debug) console.log('[Combat] enhancedAttack failed, falling back to approachAndAttack')
-              await approachAndAttack(bot, target, { maxDuration: opts.maxAttackTime || 30000 })
-            }
-          } else {
-            if (bot._debug) console.log('[Combat] using approachAndAttack')
-            await approachAndAttack(bot, target, { maxDuration: opts.maxAttackTime || 30000 })
-          }
-        } catch (e) {
-          console.error('[Combat] engage error:', e && e.message)
-          if (bot._debug) console.error(e)
-        }
+      const distBotOwner = bot.entity.position.distanceTo(owner.position)
+      if (state.mode === 'HUNT' && distBotOwner > config.maxHuntDistance + 4) {
+        log('HUNT cancelled, bot too far from owner.')
+        enterFollowMode()
       }
-    } catch (e) {
-      console.error('[Combat] Monitor fout:', e && e.message)
+      return
     }
-  }, interval)
-}
-
-export function stopCombatMonitor(bot) {
-  if (bot._combatMonitorId) {
-    clearInterval(bot._combatMonitorId)
-    delete bot._combatMonitorId
-  }
-  if (bot._protectTarget) delete bot._protectTarget
-  if (bot._lastFollowGoal) delete bot._lastFollowGoal
-}
-
-export function protectPlayer(bot, playerName) {
-  if (!playerName) return false
-  bot._protectTarget = playerName
-  bot._protectFollowing = true
-  if (bot._debug) console.log('[Combat.protectPlayer] protect target set to', playerName)
-  // Try to start following immediately (only when bot supports following)
-  try {
-    if (bot && bot.players && bot.pathfinder) {
-      followPlayer(bot, playerName)
-      if (bot._debug) console.log('[Combat.protectPlayer] started following', playerName)
+    if (state.mode !== 'FOLLOW' && now - state.lastThreatTime > config.resumeFollowMs) {
+      log('No threats for a while → back to FOLLOW.')
+      enterFollowMode()
     }
-  } catch (e) {
-    if (bot._debug) console.warn('[Combat.protectPlayer] follow start failed:', e && e.message)
+  })
+
+  bot.on('entityHurt', (entity) => {
+    if (!config.enablePvpDefense) return
+    const owner = getOwnerEntity()
+    if (!owner || entity !== owner) return
+    const attacker = bot.nearestEntity(e =>
+      e.type === 'player' &&
+      e !== bot.entity &&
+      e.position.distanceTo(owner.position) <= 4
+    )
+    if (attacker) {
+      log(`Owner attacked by player ${attacker.username}, engaging PvP.`)
+      state.mode = 'COMBAT'
+      state.currentTargetId = attacker.id
+      bot.pvp.attack(attacker)
+    }
+  })
+
+  bot.on('playerCollect', (collector, item) => {
+    if (!state.ownerName) return
+    if (collector !== bot.entity) return
+    ensureArmor()
+      .then(() => equipBestWeapon())
+      .catch(() => {})
+  })
+
+  bot.on('death', () => {
+    log('Bot died. Waiting for respawn, then follow owner again.')
+    state.currentTargetId = null
+    state.mode = 'FOLLOW'
+    setTimeout(() => {
+      if (state.ownerName) enterFollowMode()
+    }, 2000)
+  })
+
+  function setOwner(name) {
+    state.ownerName = name
+    log(`Owner set to ${name}`)
+    enterFollowMode()
   }
-  return true
+
+  function clearOwner() {
+    log('Owner cleared, stopping combat + follow.')
+    state.ownerName = null
+    state.currentTargetId = null
+    bot.pvp.stop()
+    bot.pathfinder.stop()
+    state.mode = 'FOLLOW'
+  }
+
+  return {
+    setOwner,
+    clearOwner,
+    getState: () => ({ ...state })
+  }
 }
 
-export function stopProtect(bot) {
-  delete bot._protectTarget
-  bot._protectFollowing = false
-  // stop following (safe)
-  try {
-    if (bot && bot.pathfinder && typeof bot.pathfinder.setGoal === 'function') bot.pathfinder.setGoal(null)
-  } catch (e) {
-    if (bot._debug) console.warn('[Combat.stopProtect] stop follow failed:', e && e.message)
-  }
-  if (bot._debug) console.log('[Combat.stopProtect] protect mode cleared')
-}
-
-export default { startCombatMonitor, stopCombatMonitor, protectPlayer, stopProtect, isHostile, scanForHostiles, findHostileNear }
+module.exports = { initCombatSystem }

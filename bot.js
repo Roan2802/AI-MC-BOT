@@ -8,6 +8,8 @@ const bot = mineflayer.createBot({
   username: 'Agent01'
 })
 
+import { initCombatSystem } from './src/combat.js'
+
 bot.on('spawn', () => {
   console.log('[Agent01] Bot spawned!')
   // Setup pathfinder for movement commands
@@ -16,6 +18,18 @@ bot.on('spawn', () => {
   } catch (e) {
     console.error('[Agent01] Pathfinder setup failed:', e)
   }
+  // Combat system direct initialiseren
+  const combatConfig = {
+    detectionRadius: 12,
+    priorityRadius: 6,
+    maxHuntDistance: 14,
+    followDistance: 2,
+    creeperEvadeRadius: 6,
+    ownerSafeHealth: 12,
+    resumeFollowMs: 1200,
+    enablePvpDefense: true
+  }
+  bot._combatSystem = initCombatSystem(bot, combatConfig)
   bot.chat('Hallo! Ik ben online.')
   // Initialize command router
   try {

@@ -1,7 +1,6 @@
 import mineflayer from 'mineflayer'
-import pathfinderPkg from 'mineflayer-pathfinder'
-const { pathfinder } = pathfinderPkg
-import attachMovement from './src/movement.js'
+import initCommandRouter from './commands/commandRouter.js'
+import { setupPathfinder } from './src/movement.js'
 
 const bot = mineflayer.createBot({
   host: 'localhost',
@@ -9,19 +8,28 @@ const bot = mineflayer.createBot({
   username: 'Agent01'
 })
 
-bot.once('spawn', () => {
-  bot.loadPlugin(pathfinder)
-  // attach movement intelligence (follow/stop, parkour, safety, GPS)
+bot.on('spawn', () => {
+  console.log('[Agent01] Bot spawned!')
+  // Setup pathfinder for movement commands
   try {
-    attachMovement(bot, { allowTeleportCommands: false })
+    setupPathfinder(bot)
   } catch (e) {
-    console.warn('Failed to attach movement module:', e)
+    console.error('[Agent01] Pathfinder setup failed:', e)
   }
-  // init command router for builtins and NLP
+  bot.chat('Hallo! Ik ben online.')
+  // Initialize command router
   try {
-    import('./commands/commandRouter.js').then(m=> m.default(bot)).catch(e=> console.warn('Failed to init command router:', e))
-  } catch (e){
-    console.warn('Failed to init command router (sync):', e)
+    initCommandRouter(bot)
+    console.log('[Agent01] Command router initialized.')
+  } catch (e) {
+    console.error('[Agent01] Failed to init command router:', e)
   }
-  console.log('Agent01 is online in the world!')
 })
+
+bot.on('chat', (username, message) => {
+  if (username === bot.username) return
+  console.log(`[Chat] ${username}: ${message}`)
+})
+
+bot.on('error', (err) => console.error('[Error]', err))
+bot.on('end', () => console.log('[Agent01] Disconnected'))

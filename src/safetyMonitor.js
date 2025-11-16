@@ -14,10 +14,29 @@ export function startSafetyMonitor(bot, opts = {}) {
       const pos = bot.entity && bot.entity.position
       if (!pos) return
 
+      if (bot._debug) console.log('[SafetyMonitor] raw pos type:', typeof pos, 'pos:', pos)
       const floored = { x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z) }
-      const safe = isPositionSafe(bot, floored)
-      const lavaNearby = isLavaNearby(bot, floored, 2)
-      const fireNearby = isFireNearby(bot, floored, 1)
+      let safe = false
+      let lavaNearby = false
+      let fireNearby = false
+      try {
+        safe = isPositionSafe(bot, floored)
+      } catch (e) {
+        console.error('[SafetyMonitor] isPositionSafe threw:', e && e.message)
+        console.error(e && e.stack)
+      }
+      try {
+        lavaNearby = isLavaNearby(bot, floored, 2)
+      } catch (e) {
+        console.error('[SafetyMonitor] isLavaNearby threw:', e && e.message)
+        console.error(e && e.stack)
+      }
+      try {
+        fireNearby = isFireNearby(bot, floored, 1)
+      } catch (e) {
+        console.error('[SafetyMonitor] isFireNearby threw:', e && e.message)
+        console.error(e && e.stack)
+      }
 
       // verbose debug to console when enabled
       if (bot._debug) {
@@ -43,11 +62,12 @@ export function startSafetyMonitor(bot, opts = {}) {
           }
         } catch (e) {
           console.error('[SafetyMonitor] herstel mislukt:', e && e.message)
-          if (bot._debug) console.error(e)
+          console.error(e && e.stack)
         }
       }
     } catch (e) {
       console.error('[SafetyMonitor] fout:', e && e.message)
+      console.error(e && e.stack)
     }
   }, intervalMs)
 }

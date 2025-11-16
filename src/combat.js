@@ -107,11 +107,19 @@ export function startCombatMonitor(bot, opts = {}) {
       // If protecting a player, scan near that player first
       let target = null
       if (bot._protectTarget) {
-        const playerEnt = Object.values(bot.entities || {}).find(e => e && e.type === 'player' && e.username === bot._protectTarget)
-        if (playerEnt) {
+        // Prefer bot.players lookup (more reliable) then fallback to entities scan
+        const playerRecord = bot.players && bot.players[bot._protectTarget]
+        let playerEnt = playerRecord && playerRecord.entity
+        if (!playerEnt) {
+          // fallback: find player entity by username in entities
+          playerEnt = Object.values(bot.entities || {}).find(e => e && e.type === 'player' && (e.username === bot._protectTarget || e.name === bot._protectTarget || (e.displayName && e.displayName.getText && e.displayName.getText() === bot._protectTarget)))
+        }
+        if (!playerEnt) {
+          if (bot._debug) console.log('[Combat.protectPlayer] protect target present but player entity not found for', bot._protectTarget, 'bot.players keys:', Object.keys(bot.players || {}))
+        } else {
           if (bot._debug) console.log('[Combat.protectPlayer] scanning around', bot._protectTarget)
           // find hostile near player
-          target = Object.values(bot.entities || {}).find(e => e && e.type === 'mob' && isHostile(e) && playerEnt.position.distanceTo(e.position) <= (opts.protectRange || 10))
+          target = Object.values(bot.entities || {}).find(e => e && e.type === 'mob' && isHostile(e) && playerEnt.position && playerEnt.position.distanceTo && playerEnt.position.distanceTo(e.position) <= (opts.protectRange || 10))
           if (target && bot._debug) console.log('[Combat.protectPlayer] threat to', bot._protectTarget, 'found:', target.name)
         }
       }

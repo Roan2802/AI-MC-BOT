@@ -4,8 +4,11 @@ import logger from '../utils/logger.js'
  * Navigation helpers around pathfinding and safety.
  */
 export async function goTo(bot, position, opts = {}){
-  const movements = new (await import('mineflayer-pathfinder')).Movements(bot)
-  const { goals } = await import('mineflayer-pathfinder')
+  const pfModule = await import('mineflayer-pathfinder')
+  const pf = pfModule.default || pfModule
+  const Movements = pf.Movements
+  const goals = pf.goals
+  const movements = new Movements(bot)
   bot.pathfinder.setMovements(movements)
   const goal = new goals.GoalBlock(position.x, position.y, position.z)
   bot.pathfinder.setGoal(goal)

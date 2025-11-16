@@ -27,8 +27,11 @@ export async function mineResource(bot, resourceType, opts = {}){
   bot.chat(`Ga naar ${target.name} op ${target.position.x},${target.position.y},${target.position.z}`)
   // move to block and dig
   try {
-    const movements = new (await import('mineflayer-pathfinder')).Movements(bot)
-    const { goals } = await import('mineflayer-pathfinder')
+    const pfModule = await import('mineflayer-pathfinder')
+    const pf = pfModule.default || pfModule
+    const Movements = pf.Movements
+    const goals = pf.goals
+    const movements = new Movements(bot)
     bot.pathfinder.setMovements(movements)
     const goal = new goals.GoalBlock(target.position.x, target.position.y, target.position.z)
     bot.pathfinder.setGoal(goal)

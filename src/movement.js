@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
-import { Movements, goals } from 'mineflayer-pathfinder'
+import pathfinderPkg from 'mineflayer-pathfinder'
+const { Movements, goals } = pathfinderPkg
 const { GoalFollow, GoalBlock, GoalNear } = goals
 
 function formatPos(p){ return `${p.x.toFixed(2)} ${p.y.toFixed(2)} ${p.z.toFixed(2)}` }

@@ -1,5 +1,6 @@
 import mineflayer from 'mineflayer'
-import { pathfinder } from 'mineflayer-pathfinder'
+import pathfinderPkg from 'mineflayer-pathfinder'
+const { pathfinder } = pathfinderPkg
 import attachMovement from './src/movement.js'
 
 const bot = mineflayer.createBot({

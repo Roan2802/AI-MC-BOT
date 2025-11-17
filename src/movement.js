@@ -132,11 +132,113 @@ function stay(bot) {
   stop(bot)
 }
 
+/**
+ * Initialize global stuck detector
+ * Monitors bot position and breaks blocking blocks if stuck for 10+ seconds
+ * ONLY ACTIVE DURING TASKS (mining, wood, combat, etc.)
+ * 
+ * @param {object} bot - Mineflayer bot instance
+ */
+function initStuckDetector(bot) {
+  let lastPosition = bot.entity.position.clone()
+  let lastMoveTime = Date.now()
+  const STUCK_TIMEOUT = 10000 // 10 seconds
+  const STUCK_DISTANCE = 0.5 // Movement threshold
+  
+  // Task tracking - stuck detector only works during active tasks
+  bot.isDoingTask = false
+  
+  console.log('[Movement] Stuck detector initialized (task-based)')
+  
+  // Check every 2 seconds
+  const stuckCheckInterval = setInterval(() => {
+    try {
+      if (!bot || !bot.entity) {
+        clearInterval(stuckCheckInterval)
+        return
+      }
+      
+      // ONLY check if bot is actively doing a task
+      if (!bot.isDoingTask) {
+        // Reset timers when idle
+        lastPosition = bot.entity.position.clone()
+        lastMoveTime = Date.now()
+        return
+      }
+      
+      const currentPos = bot.entity.position
+      const distance = lastPosition.distanceTo(currentPos)
+      const timeSinceMove = Date.now() - lastMoveTime
+      
+      if (distance > STUCK_DISTANCE) {
+        // Bot moved, update position
+        lastPosition = currentPos.clone()
+        lastMoveTime = Date.now()
+      } else if (timeSinceMove > STUCK_TIMEOUT) {
+        // Bot is stuck DURING TASK! Break blocking blocks
+        console.log('[Movement] ⚠️ Bot stuck during task! Breaking blocking blocks...')
+        bot.chat('⚠️ Stuck! Clearing path...')
+        
+        // Break 16 blocks around bot: 8 at foot level + 8 at head level
+        // NOT above or below (no digging down or breaking ceiling)
+        const blockingPositions = [
+          // Foot level (8 blocks around horizontally)
+          currentPos.offset(1, 0, 0).floored(),   // East
+          currentPos.offset(-1, 0, 0).floored(),  // West
+          currentPos.offset(0, 0, 1).floored(),   // South
+          currentPos.offset(0, 0, -1).floored(),  // North
+          currentPos.offset(1, 0, 1).floored(),   // Southeast
+          currentPos.offset(1, 0, -1).floored(),  // Northeast
+          currentPos.offset(-1, 0, 1).floored(),  // Southwest
+          currentPos.offset(-1, 0, -1).floored(), // Northwest
+          
+          // Head/Eye level (8 blocks around horizontally, 1 block up)
+          currentPos.offset(1, 1, 0).floored(),   // East head
+          currentPos.offset(-1, 1, 0).floored(),  // West head
+          currentPos.offset(0, 1, 1).floored(),   // South head
+          currentPos.offset(0, 1, -1).floored(),  // North head
+          currentPos.offset(1, 1, 1).floored(),   // Southeast head
+          currentPos.offset(1, 1, -1).floored(),  // Northeast head
+          currentPos.offset(-1, 1, 1).floored(),  // Southwest head
+          currentPos.offset(-1, 1, -1).floored()  // Northwest head
+        ]
+        
+        // Break blocks asynchronously
+        ;(async () => {
+          for (const pos of blockingPositions) {
+            try {
+              const block = bot.blockAt(pos)
+              if (block && block.diggable && block.name !== 'air') {
+                console.log(`[Movement] Breaking blocking ${block.name} at ${pos.x}, ${pos.y}, ${pos.z}`)
+                await bot.dig(block)
+                await new Promise(r => setTimeout(r, 200))
+              }
+            } catch (e) {
+              // Ignore dig errors
+            }
+          }
+          
+          // Reset stuck timer after clearing
+          lastPosition = bot.entity.position.clone()
+          lastMoveTime = Date.now()
+          console.log('[Movement] Path cleared, resuming task...')
+        })()
+      }
+    } catch (e) {
+      console.error('[Movement] Stuck detector error:', e.message)
+    }
+  }, 2000) // Check every 2 seconds
+  
+  // Store interval for cleanup
+  bot._stuckCheckInterval = stuckCheckInterval
+}
+
 module.exports = {
   setupPathfinder,
   followPlayer,
   goToPlayer,
   moveToPosition,
   stop,
-  stay
+  stay,
+  initStuckDetector
 }

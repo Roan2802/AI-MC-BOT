@@ -9,6 +9,7 @@ const pathfinderPkg = require('mineflayer-pathfinder')
 const { Movements, goals } = pathfinderPkg
 const { ensureWoodenPickaxe, ensureStonePickaxe, hasPickaxe } = require('./crafting-tools.js')
 const { selectSafeTarget } = require('./navigation.js')
+const { ensureToolForBlock } = require('./task-tools.js')
 
 /**
  * Scan for blocks matching a resource type and harvest the closest one.
@@ -20,18 +21,20 @@ const { selectSafeTarget } = require('./navigation.js')
  * @throws {Error} If no matching blocks found or mining fails
  */
 async function mineResource(bot, resourceType, radius = 20) {
+  // Enable stuck detection during task
+  bot.isDoingTask = true
+  
   try {
-    // Ensure we have a suitable pickaxe for stone/ores; prefer stone+ if possible
-    const needPickaxeKeywords = ['stone', 'ore', 'coal', 'iron', 'andesite', 'granite', 'diorite']
-    const needsPickaxe = needPickaxeKeywords.some(k => resourceType && resourceType.includes(k))
-    if (needsPickaxe) {
-      bot.chat('Controleer en maak (indien mogelijk) een betere pickaxe...')
-      await ensureStonePickaxe(bot)
-      if (!hasPickaxe(bot)) {
-        bot.chat('Kon geen pickaxe maken, ik kan dit niet minen.')
-        throw new Error('no_pickaxe')
-      }
+    // Use task-tools to ensure correct tool for the resource
+    console.log(`[Mining] Ensuring correct tool for ${resourceType}...`)
+    const hasCorrectTool = await ensureToolForBlock(bot, resourceType, true)
+    
+    if (!hasCorrectTool) {
+      bot.chat(`❌ Cannot mine ${resourceType} - no suitable tool`)
+      bot.isDoingTask = false
+      throw new Error('no_suitable_tool')
     }
+    
     const pos = bot.entity.position
     const candidates = []
 
@@ -108,8 +111,15 @@ async function mineResource(bot, resourceType, radius = 20) {
     await bot.dig(fresh)
     console.log(`[Mining] Mined ${target.name}`)
     bot.chat(`Klaar met hakken van ${target.name}`)
+    
+    // Disable stuck detection when task complete
+    bot.isDoingTask = false
   } catch (e) {
     console.error('[Mining] Error:', e.message)
+    
+    // Disable stuck detection on error
+    bot.isDoingTask = false
+    
     throw new Error(`Mining error: ${e.message}`)
   }
 }

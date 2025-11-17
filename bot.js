@@ -1,7 +1,8 @@
 const mineflayer = require('mineflayer');
 const initCommandRouter = require('./commands/commandRouter.js');
-const { setupPathfinder } = require('./src/movement.js');
+const { setupPathfinder, initStuckDetector } = require('./src/movement.js');
 const { initCombatSystem } = require('./src/combat.js');
+const { initToolMonitor } = require('./src/tool-manager.js');
 
 // Global error handlers
 process.on('uncaughtException', (err) => {
@@ -51,6 +52,15 @@ bot.on('spawn', () => {
   } catch (e) {
     console.error('[Agent01] Pathfinder setup failed:', e);
   }
+  
+  // Initialize stuck detector
+  try {
+    initStuckDetector(bot);
+    console.log('[Agent01] Stuck detector initialized');
+  } catch (e) {
+    console.error('[Agent01] Stuck detector init failed:', e);
+  }
+  
   // Combat system direct initialiseren
   const combatConfig = {
     detectionRadius: 12,
@@ -63,6 +73,15 @@ bot.on('spawn', () => {
     enablePvpDefense: true
   };
   bot._combatSystem = initCombatSystem(bot, combatConfig);
+  
+  // Initialize tool manager for auto-replacement
+  try {
+    initToolMonitor(bot);
+    console.log('[Agent01] Tool manager initialized');
+  } catch (e) {
+    console.error('[Agent01] Tool manager init failed:', e);
+  }
+  
   bot.chat('Hallo! Ik ben online.');
   // Initialize command router
   try {
@@ -71,20 +90,20 @@ bot.on('spawn', () => {
   } catch (e) {
     console.error('[Agent01] Failed to init command router:', e);
   }
-  
-  // Send periodic status messages to confirm connection
-  setInterval(() => {
-    try {
-      bot.chat('Bot is actief - test');
-    } catch (e) {
-      console.log('[Agent01] Could not send status message:', e.message);
-    }
-  }, 30000); // Every 30 seconds
 });
 
 bot.on('chat', (username, message) => {
   if (username === bot.username) return;
   console.log(`[Chat] RECEIVED: ${username}: ${message}`);
+});
+
+bot.on('death', () => {
+  console.log('[Agent01] Bot died! Respawning...');
+  try {
+    bot.chat('💀 Ik ben gedood! Respawning...');
+  } catch (e) {
+    console.log('[Agent01] Could not send death message:', e.message);
+  }
 });
 
 bot.on('error', (err) => {

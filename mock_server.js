@@ -14,7 +14,7 @@ const net = require('net');
 const { EventEmitter } = require('events');
 
 console.log('[Mock Server] Starting...');
-console.log('[Mock Server] Listening on localhost:25565');
+console.log('[Mock Server] Listening on localhost:25566');
 console.log('[Mock Server] Waiting for bot connection...\n');
 
 // Create TCP server
@@ -76,13 +76,13 @@ const server = net.createServer((socket) => {
   });
 });
 
-server.listen(25565, 'localhost', () => {
-  console.log('[Mock Server] TCP server listening on port 25565\n');
+server.listen(25566, 'localhost', () => {
+  console.log('[Mock Server] TCP server listening on port 25566\n');
 });
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.error('[Mock Server] ❌ Port 25565 is already in use!');
+    console.error('[Mock Server] ❌ Port 25566 is already in use!');
     console.error('[Mock Server] Please close the other server or change port');
     process.exit(1);
   }

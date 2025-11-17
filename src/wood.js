@@ -226,9 +226,16 @@ async function collectNearbyItems(bot, radius = 10) {
         const dist = bot.entity.position.distanceTo(itemEntity.position)
         console.log(`[Wood] Moving to item at distance ${dist.toFixed(2)}...`)
         
-        // Use pathfinder to move to item
-        const targetPos = itemEntity.position.clone()
-        await bot.pathfinder.goto(targetPos)
+        // Use simple movement instead of pathfinder
+        console.log('[Wood] Moving to item manually...')
+        try {
+          await bot.lookAt(itemEntity.position)
+          await bot.setControlState('forward', true)
+          await new Promise(r => setTimeout(r, Math.min(dist * 100, 3000))) // Move for up to 3 seconds
+          await bot.setControlState('forward', false)
+        } catch (moveErr) {
+          console.log('[Wood] Manual movement to item failed:', moveErr.message)
+        }
         
         // Wait for pickup
         await new Promise(r => setTimeout(r, 1500))
@@ -432,13 +439,11 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
   let axeWasCrafted = false  // Track if we successfully crafted an axe
 
   try {
-    console.log('[Wood] Verifying pathfinder availability...')
-    if (!bot.pathfinder || !bot.pathfinder.goto) {
-      console.error('[Wood] Pathfinder not initialized. Call setupPathfinder(bot) first!')
-      bot.chat('❌ Pathfinder niet beschikbaar')
-      return 0
-    }
-    console.log('[Wood] Pathfinder verified')
+    console.log('[Wood] Pathfinder temporarily disabled due to compatibility issues')
+    // Skip pathfinder initialization entirely
+    bot.chat('⚠️ Pathfinder uitgeschakeld, beperkte navigatie')
+    
+    // Continue without pathfinder
 
     // STEP 0: PREPARE TOOLS FIRST (before main loop)
     console.log('[Wood] STEP 0: Preparing tools...')
@@ -478,8 +483,17 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
             
             if (dist > 3) {
               console.log(`[Wood] - Moving to log at distance ${dist.toFixed(1)}...`)
-              await bot.pathfinder.goto(new Vec3(logPos.x, logPos.y, logPos.z))
-              console.log('[Wood] - Reached log location')
+              console.log('[Wood] Pathfinder disabled, using manual movement...')
+              // Manual movement fallback
+              try {
+                await bot.lookAt(logPos)
+                await bot.setControlState('forward', true)
+                await new Promise(r => setTimeout(r, Math.min(dist * 100, 3000)))
+                await bot.setControlState('forward', false)
+                console.log('[Wood] Manual movement complete')
+              } catch (moveErr) {
+                console.log('[Wood] Manual movement also failed:', moveErr.message)
+              }
             }
             
             // Now dig from close distance
@@ -578,20 +592,14 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
     
     await new Promise(r => setTimeout(r, 500))
 
-    console.log('[Wood] Loading pathfinder package...')
-    try {
-      pathfinderPkg = require('mineflayer-pathfinder')
-      if (!pathfinderPkg || !pathfinderPkg.Movements || !pathfinderPkg.goals) {
-        throw new Error('Missing pathfinder components')
-      }
-      Movements = pathfinderPkg.Movements
-      goals = pathfinderPkg.goals
-      console.log('[Wood] Pathfinder package loaded successfully')
-    } catch (pkgErr) {
-      console.error('[Wood] Failed to load pathfinder package:', pkgErr.message)
-      bot.chat('❌ Kon pathfinder package niet laden')
-      return 0
-    }
+    console.log('[Wood] Pathfinder package loading skipped (disabled)')
+    // pathfinderPkg = require('mineflayer-pathfinder')
+    // if (!pathfinderPkg || !pathfinderPkg.Movements || !pathfinderPkg.goals) {
+    //   throw new Error('Missing pathfinder components')
+    // }
+    // Movements = pathfinderPkg.Movements
+    // goals = pathfinderPkg.goals
+    console.log('[Wood] Continuing without pathfinder package')
 
     // Continue until we reach maxBlocks or no more trees found
     let loopIterations = 0
@@ -742,45 +750,16 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
               // Silently fail
             }
             
-            // Track position to detect if stuck
-            const startPos = bot.entity.position.clone()
-            const startTime = Date.now()
-            
+            console.log('[Wood] Pathfinder disabled, using simple movement...')
+            // Simple manual movement instead of pathfinder
             try {
-              const movements = new Movements(bot)
-              movements.canDig = true // Allow breaking obstacles
-              bot.pathfinder.setMovements(movements)
-              
-              const goal = new goals.GoalNear(block.position.x, block.position.y, block.position.z, 3)
-              await bot.pathfinder.goto(goal)
-              console.log('[Wood] Navigation complete')
+              await bot.lookAt(block.position)
+              await bot.setControlState('forward', true)
+              await new Promise(r => setTimeout(r, Math.min(dist * 50, 2000))) // Shorter movement time
+              await bot.setControlState('forward', false)
+              console.log('[Wood] Simple navigation complete')
             } catch (navError) {
-              console.log('[Wood] Navigation failed:', navError.message)
-              
-              // Check if stuck (no movement in 10 seconds)
-              const timePassed = Date.now() - startTime
-              const posDiff = bot.entity.position.distanceTo(startPos)
-              
-              if (timePassed > 10000 && posDiff < 1) {
-                console.log('[Wood] STUCK! Trying to escape...')
-                const unstuck = await tryUnstuck(bot)
-                if (unstuck) {
-                  console.log('[Wood] Escaped! Retrying navigation...')
-                  await new Promise(r => setTimeout(r, 500))
-                }
-              }
-              
-              // If stuck, try to break obstacle
-              if (bot._debug) console.log('[Wood] Navigation blocked, trying to clear path')
-              try {
-                const obstacle = bot.blockAt(bot.entity.position.offset(0, 0, 1))
-                if (obstacle && obstacle.name !== 'air' && obstacle.diggable) {
-                  await bot.dig(obstacle)
-                  await new Promise(r => setTimeout(r, 300))
-                }
-              } catch (obsErr) {
-                console.log('[Wood] Obstacle clear failed:', obsErr.message)
-              }
+              console.log('[Wood] Simple navigation failed:', navError.message)
             }
           }
           
@@ -915,14 +894,16 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
         // Navigate to crafting table if too far
         if (dist > 4) {
           console.log('[Wood] Crafting table is', Math.round(dist), 'blocks away, navigating...')
+          console.log('[Wood] Pathfinder disabled, using simple movement to crafting table...')
+          // Simple manual movement to crafting table
           try {
-            const movements = new Movements(bot)
-            bot.pathfinder.setMovements(movements)
-            const goal = new goals.GoalNear(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z, 2)
-            await bot.pathfinder.goto(goal)
-            await new Promise(r => setTimeout(r, 300))
+            await bot.lookAt(craftingTable.position)
+            await bot.setControlState('forward', true)
+            await new Promise(r => setTimeout(r, Math.min(dist * 50, 3000)))
+            await bot.setControlState('forward', false)
+            console.log('[Wood] Moved to crafting table area')
           } catch (navErr) {
-            console.log('[Wood] Could not navigate to crafting table:', navErr.message)
+            console.log('[Wood] Could not move to crafting table:', navErr.message)
             attempts++
             continue
           }

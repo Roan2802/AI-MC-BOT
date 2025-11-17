@@ -46,7 +46,9 @@ bot.on('spawn', () => {
   console.log('[Agent01] Bot spawned!');
   // Setup pathfinder for movement commands
   try {
-    setupPathfinder(bot);
+    // TEMPORARILY DISABLE PATHFINDER DUE TO COMPATIBILITY ISSUES
+    console.log('[Agent01] Pathfinder temporarily disabled due to compatibility issues');
+    // setupPathfinder(bot);
   } catch (e) {
     console.error('[Agent01] Pathfinder setup failed:', e);
   }
@@ -70,11 +72,20 @@ bot.on('spawn', () => {
   } catch (e) {
     console.error('[Agent01] Failed to init command router:', e);
   }
+  
+  // Send periodic status messages to confirm connection
+  setInterval(() => {
+    try {
+      bot.chat('Bot is actief - test');
+    } catch (e) {
+      console.log('[Agent01] Could not send status message:', e.message);
+    }
+  }, 30000); // Every 30 seconds
 });
 
 bot.on('chat', (username, message) => {
   if (username === bot.username) return;
-  console.log(`[Chat] ${username}: ${message}`);
+  console.log(`[Chat] RECEIVED: ${username}: ${message}`);
 });
 
 bot.on('error', (err) => {

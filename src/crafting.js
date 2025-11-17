@@ -205,7 +205,13 @@ async function ensureWoodenAxe(bot) {
     }
     
     if (!hasPlanks && targetAxe === 'wooden_axe') {
-      bot.chat('❌ Geen planks beschikbaar voor axe')
+      bot.chat('⚠️ Niet genoeg planks, heb logs nodig')
+      return false
+    }
+    
+    // For stone axe, we still need planks for sticks
+    if (!hasPlanks && !hasSticks) {
+      bot.chat('⚠️ Geen planks/sticks voor stone axe')
       return false
     }
     
@@ -223,7 +229,7 @@ async function ensureWoodenAxe(bot) {
     }
     
     if (!hasSticks) {
-      bot.chat('❌ Geen sticks beschikbaar voor axe')
+      bot.chat('⚠️ Geen sticks, heb meer planks nodig')
       return false
     }
     

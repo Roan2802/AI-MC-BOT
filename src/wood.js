@@ -252,19 +252,36 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
 
   // Continue until we reach maxBlocks or no more trees found
   while (collected < maxBlocks) {
-    // STEP 1: Check if we have an axe, craft one if needed
+    // STEP 1: Check if we have an axe, try to craft one if we have materials
     const { ensureToolFor } = require('./crafting.js')
-    const hasAxeNow = await ensureToolFor(bot, 'wood')
+    const currentAxe = getBestAxe(bot)
     
-    if (!hasAxeNow) {
-      bot.chat('❌ Kan geen axe maken, geen materialen')
-      break
+    if (!currentAxe) {
+      // Try to craft axe if we have enough materials
+      const hasLogs = bot.inventory.items().find(i => i.name && i.name.includes('log'))
+      const hasPlanks = bot.inventory.items().find(i => i.name && i.name.includes('planks'))
+      const hasSticks = bot.inventory.items().find(i => i.name === 'stick')
+      
+      // Only try to craft if we have some materials (at least logs or planks+sticks)
+      if ((hasLogs && hasLogs.count >= 2) || (hasPlanks && hasPlanks.count >= 3 && hasSticks && hasSticks.count >= 2)) {
+        bot.chat('🔨 Probeer axe te craften...')
+        await ensureToolFor(bot, 'wood')
+      } else {
+        bot.chat('⚠️ Geen axe, hak met blote hand tot genoeg materiaal')
+      }
     }
     
-    // Equip best axe
+    // Equip best axe if we have one
     const bestAxe = getBestAxe(bot)
     if (bestAxe) {
       await bot.equip(bestAxe, 'hand')
+    } else {
+      // Unequip to use bare hands
+      try {
+        await bot.unequip('hand')
+      } catch (e) {
+        // Already bare hands
+      }
     }
     
     const origin = bot.entity.position

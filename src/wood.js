@@ -12,6 +12,224 @@ const { mineResource } = require('./mining.js')
 const { getBestAxe, ensureToolFor } = require('./crafting.js')
 
 /**
+ * Ensure crafting table is placed nearby
+ * @param {import('mineflayer').Bot} bot
+ * @returns {Promise<boolean>} true if crafting table available
+ */
+async function ensureCraftingTable(bot) {
+  try {
+    if (!bot) return false
+    
+    // Check if crafting table already nearby
+    const craftingTable = bot.findBlock({
+      matching: b => b && b.name === 'crafting_table',
+      maxDistance: 5,
+      count: 1
+    })
+    
+    if (craftingTable) {
+      console.log('[Wood] Crafting table found nearby')
+      return true
+    }
+    
+    // Try to place one if we have materials
+    const planks = bot.inventory.items().find(i => i && i.name && i.name.includes('planks'))
+    if (!planks || planks.count < 4) {
+      console.log('[Wood] Not enough planks for crafting table')
+      return false
+    }
+    
+    console.log('[Wood] Crafting table not found, placing one...')
+    
+    // Place crafting table
+    const groundBlock = bot.blockAt(bot.entity.position.offset(1, -1, 0))
+    if (groundBlock && groundBlock.name !== 'air') {
+      try {
+        await bot.equip(planks, 'hand')
+        // Recipe: 4 planks = 1 crafting table
+        const recipes = bot.recipesFor(bot.registry.itemsByName['crafting_table'].id, null, 1, null)
+        if (recipes && recipes.length > 0) {
+          await bot.craft(recipes[0], 1)
+          console.log('[Wood] Crafting table crafted')
+          await new Promise(r => setTimeout(r, 300))
+          
+          // Place it
+          const craftingTableItem = bot.inventory.items().find(i => i && i.name === 'crafting_table')
+          if (craftingTableItem) {
+            await bot.equip(craftingTableItem, 'hand')
+            await bot.placeBlock(groundBlock, new bot.Vec3(1, 0, 0))
+            console.log('[Wood] Crafting table placed')
+            await new Promise(r => setTimeout(r, 300))
+            return true
+          }
+        }
+      } catch (e) {
+        console.log('[Wood] Failed to craft/place table:', e.message)
+      }
+    }
+    
+    return false
+  } catch (e) {
+    console.error('[Wood] ensureCraftingTable error:', e.message)
+    return false
+  }
+}
+
+/**
+ * Ensure wooden axe is available (craft if needed)
+ * @param {import('mineflayer').Bot} bot
+ * @returns {Promise<boolean>} true if axe available
+ */
+async function ensureWoodenAxe(bot) {
+  try {
+    if (!bot) return false
+    
+    // Check if already have axe
+    const axe = getBestAxe(bot)
+    if (axe) {
+      console.log('[Wood] Already have axe:', axe.name)
+      return true
+    }
+    
+    // Check if have materials for wooden axe (3 planks + 2 sticks)
+    const planks = bot.inventory.items().find(i => i && i.name && i.name.includes('planks'))
+    const sticks = bot.inventory.items().find(i => i && i.name === 'stick')
+    
+    if (!planks || planks.count < 3 || !sticks || sticks.count < 2) {
+      console.log('[Wood] Not enough materials for axe')
+      return false
+    }
+    
+    console.log('[Wood] Crafting wooden axe...')
+    
+    // Ensure crafting table nearby
+    const hasTable = await ensureCraftingTable(bot)
+    if (!hasTable) {
+      console.log('[Wood] Could not get crafting table, trying inventory craft')
+    }
+    
+    // Try to craft axe
+    try {
+      const axeItemId = bot.registry.itemsByName['wooden_axe']
+      if (axeItemId && typeof axeItemId.id === 'number') {
+        const recipes = bot.recipesFor(axeItemId.id, null, 1, null)
+        if (recipes && recipes.length > 0) {
+          await bot.craft(recipes[0], 1)
+          console.log('[Wood] Wooden axe crafted!')
+          await new Promise(r => setTimeout(r, 300))
+          return true
+        }
+      }
+    } catch (e) {
+      console.log('[Wood] Craft axe failed:', e.message)
+    }
+    
+    return false
+  } catch (e) {
+    console.error('[Wood] ensureWoodenAxe error:', e.message)
+    return false
+  }
+}
+
+/**
+ * Plant all saplings in inventory at suitable locations nearby
+ * @param {import('mineflayer').Bot} bot
+ * @param {number} radius - Search radius for planting spots
+ * @returns {Promise<number>} Number of saplings planted
+ */
+async function plantAllSaplings(bot, radius = 25) {
+  try {
+    if (!bot || !bot.inventory) {
+      console.log('[Wood] plantAllSaplings: Invalid bot')
+      return 0
+    }
+
+    // Get all saplings from inventory
+    const saplings = bot.inventory.items().filter(i => 
+      i && i.name && i.name.includes('sapling')
+    )
+    
+    if (saplings.length === 0) {
+      console.log('[Wood] No saplings to plant')
+      return 0
+    }
+
+    let planted = 0
+    const origin = bot.entity.position
+
+    for (const sapling of saplings) {
+      try {
+        // Find suitable ground spots
+        const baseX = Math.floor(origin.x)
+        const baseZ = Math.floor(origin.z)
+        
+        // Search for dirt/grass blocks in a grid pattern
+        for (let dx = -radius; dx <= radius; dx += 2) {
+          for (let dz = -radius; dz <= radius; dz += 2) {
+            if (planted >= saplings[0].count) break
+            
+            const checkX = baseX + dx
+            const checkZ = baseZ + dz
+            
+            // Try different heights
+            for (let dy = 0; dy <= 3; dy++) {
+              const checkY = Math.floor(origin.y) + dy
+              
+              const groundBlock = bot.blockAt({ x: checkX, y: checkY - 1, z: checkZ })
+              const airBlock = bot.blockAt({ x: checkX, y: checkY, z: checkZ })
+              
+              if (!groundBlock || !airBlock) continue
+              
+              // Check if ground is suitable and air above is empty
+              const suitableGround = groundBlock.name === 'grass_block' || 
+                                    groundBlock.name === 'dirt' || 
+                                    groundBlock.name === 'podzol'
+              const emptyAbove = airBlock.name === 'air'
+              
+              if (suitableGround && emptyAbove) {
+                // Check distance isn't too close to other saplings
+                const tooClose = Object.values(bot.entities).some(e => {
+                  try {
+                    if (!e || !e.position) return false
+                    const dist = e.position.distanceTo({ x: checkX, y: checkY, z: checkZ })
+                    return dist < 3
+                  } catch (e) {
+                    return false
+                  }
+                })
+                
+                if (!tooClose) {
+                  // Plant the sapling
+                  try {
+                    await bot.equip(sapling, 'hand')
+                    await bot.placeBlock(groundBlock, new bot.Vec3(0, 1, 0))
+                    planted++
+                    console.log(`[Wood] Sapling ${planted} planted at ${checkX}, ${checkY}, ${checkZ}`)
+                    await new Promise(r => setTimeout(r, 150))
+                  } catch (plantErr) {
+                    console.log('[Wood] Plant failed at', checkX, checkY, checkZ)
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (saplingErr) {
+        console.error('[Wood] Sapling loop error:', saplingErr.message)
+      }
+    }
+
+    if (planted > 0) {
+      bot.chat(`🌱 ${planted} saplings geplant`)
+    }
+    return planted
+  } catch (e) {
+    console.error('[Wood] plantAllSaplings error:', e.message)
+    return 0
+  }
+}
+
+/**
  * Find connected log blocks (flood-fill) starting from a root log.
  * @param {import('mineflayer').Bot} bot
  * @param {import('prismarine-block').Block} startBlock
@@ -99,9 +317,21 @@ async function collectNearbyItems(bot, radius = 10) {
         if (!e || !e.position) return false
         if (e.position.distanceTo(bot.entity.position) >= radius) return false
         
-        // Check if entity is an item using objectType or name
-        const objType = e.objectType || e.name || ''
-        if (!objType.includes('item') && objType !== 'Item') return false
+        // Check if entity is an item using displayName first (newer), fallback to objectType
+        let isItem = false
+        try {
+          // Try displayName first (non-deprecated)
+          isItem = e.displayName === 'Item'
+        } catch (e1) {
+          // Fallback to objectType if displayName fails
+          try {
+            isItem = e.objectType === 'item' || e.objectType === 'Item'
+          } catch (e2) {
+            // Last resort: check name
+            isItem = (e.name || '').includes('item')
+          }
+        }
+        if (!isItem) return false
         
         // Try to identify item type from metadata
         if (e.metadata && e.metadata[8] && typeof e.metadata[8] === 'object') {
@@ -360,8 +590,28 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
     }
     console.log('[Wood] Pathfinder verified')
 
-    // Verify pathfinder package can be loaded
-    let pathfinderPkg, Movements, goals
+    // STEP 0: Ensure we have an axe (craft if needed)
+    console.log('[Wood] STEP 0: Checking axe availability...')
+    const hasAxe = getBestAxe(bot)
+    if (!hasAxe) {
+      console.log('[Wood] No axe found, attempting to craft one...')
+      bot.chat('🔨 Probeer axe te craften...')
+      try {
+        const axieCrafted = await ensureWoodenAxe(bot)
+        if (axieCrafted) {
+          console.log('[Wood] Axe successfully crafted!')
+          bot.chat('✅ Axe gecraft')
+        } else {
+          console.log('[Wood] Could not craft axe, will use bare hands')
+          bot.chat('⚠️ Geen axe, hak met blote hand')
+        }
+      } catch (axeErr) {
+        console.error('[Wood] Axe crafting error:', axeErr.message)
+      }
+      await new Promise(r => setTimeout(r, 500))
+    }
+
+    console.log('[Wood] Loading pathfinder package...')
     try {
       pathfinderPkg = require('mineflayer-pathfinder')
       if (!pathfinderPkg || !pathfinderPkg.Movements || !pathfinderPkg.goals) {
@@ -586,6 +836,17 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
       console.log('[Wood] Final chat error:', chatErr.message)
     }
 
+    // STEP 6: Plant saplings after all chopping is done
+    if (opts.replant) {
+      console.log('[Wood] STEP 6: Planting saplings...')
+      try {
+        await plantAllSaplings(bot, 25)
+        console.log('[Wood] Sapling planting complete')
+      } catch (plantErr) {
+        console.error('[Wood] Sapling planting error:', plantErr.message)
+      }
+    }
+
     // Auto-craft if enabled and we have logs
     if (opts.craftPlanks && collected > 0) {
       try {
@@ -625,5 +886,8 @@ module.exports = {
   craftSticks, 
   findConnectedLogs,
   replantSapling,
-  collectNearbyItems
+  collectNearbyItems,
+  plantAllSaplings,
+  ensureCraftingTable,
+  ensureWoodenAxe
 }

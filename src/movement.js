@@ -18,11 +18,9 @@ const { GoalFollow, GoalNear, GoalBlock } = goals
  */
 function setupPathfinder(bot) {
   try {
-    // TEMPORARILY DISABLE PATHFINDER DUE TO COMPATIBILITY ISSUES
-    console.log('[Movement] Pathfinder temporarily disabled due to compatibility issues')
-    // const { pathfinder } = pathfinderPkg
-    // bot.loadPlugin(pathfinder)
-    // console.log('[Movement] Pathfinder plugin loaded')
+    const { pathfinder } = pathfinderPkg
+    bot.loadPlugin(pathfinder)
+    console.log('[Movement] Pathfinder plugin loaded successfully')
   } catch (e) {
     console.error('[Movement] Failed to load pathfinder:', e.message)
     throw new Error('Pathfinder plugin load failed')

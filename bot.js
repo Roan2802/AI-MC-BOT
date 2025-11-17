@@ -46,9 +46,8 @@ bot.on('spawn', () => {
   console.log('[Agent01] Bot spawned!');
   // Setup pathfinder for movement commands
   try {
-    // TEMPORARILY DISABLE PATHFINDER DUE TO COMPATIBILITY ISSUES
-    console.log('[Agent01] Pathfinder temporarily disabled due to compatibility issues');
-    // setupPathfinder(bot);
+    setupPathfinder(bot);
+    console.log('[Agent01] Pathfinder initialized successfully');
   } catch (e) {
     console.error('[Agent01] Pathfinder setup failed:', e);
   }

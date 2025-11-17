@@ -213,33 +213,43 @@ async function ensureWoodenAxe(bot) {
   }
   
   try {
+    // Find the crafting table block
+    const craftingTable = bot.findBlock({
+      matching: b => b && b.name === 'crafting_table',
+      maxDistance: 5,
+      count: 1
+    })
+    
+    if (!craftingTable) {
+      console.log('[Crafting] No crafting table found nearby for axe crafting')
+      return false
+    }
+    
     // Check if crafting table window is already open
     if (bot.currentWindow && bot.currentWindow.type === 'minecraft:crafting') {
       console.log('[Crafting] Crafting table window already open, proceeding with craft...')
     } else {
-      console.log('[Crafting] Crafting table window not open, opening...')
-      const opened = await ensureCraftingTableOpen(bot)
-      if (!opened) {
-        console.log('[Crafting] Could not open crafting table for axe')
-        return false
-      }
+      console.log('[Crafting] Opening crafting table for axe...')
+      await bot.openBlock(craftingTable)
+      await new Promise(r => setTimeout(r, 500))
     }
     
-    // Now craft the axe directly
+    // Now craft the axe directly with the crafting table reference
     const axeItem = bot.registry.itemsByName['wooden_axe']
     if (!axeItem) {
       console.log('[Crafting] Wooden axe not found in registry')
       return false
     }
     
-    const recipes = bot.recipesFor(axeItem.id, null, 1, bot.currentWindow)
+    const recipes = bot.recipesFor(axeItem.id, null, 1, craftingTable)
     if (!recipes || recipes.length === 0) {
       console.log('[Crafting] No recipes found for wooden axe')
       return false
     }
     
-    await bot.craft(recipes[0], 1, bot.currentWindow)
+    await bot.craft(recipes[0], 1, craftingTable)
     console.log('[Crafting] Wooden axe crafted successfully')
+    await new Promise(r => setTimeout(r, 500))
     return true
   } catch (e) {
     console.error('[Crafting] Wooden axe craft failed:', e.message)

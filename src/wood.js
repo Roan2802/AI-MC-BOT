@@ -285,13 +285,19 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
       
       console.log('[Wood] Materials check:', { hasLogs: !!hasLogs, hasPlanks: !!hasPlanks, hasSticks: !!hasSticks })
       
+      // TEMPORARILY DISABLED: Auto-crafting causes server disconnect
       // Only try to craft if we have some materials (at least logs or planks+sticks)
+      /*
       if ((hasLogs && hasLogs.count >= 2) || (hasPlanks && hasPlanks.count >= 3 && hasSticks && hasSticks.count >= 2)) {
+        console.log('[Wood] About to call ensureToolFor...')
         bot.chat('🔨 Probeer axe te craften...')
         await ensureToolFor(bot, 'wood')
+        console.log('[Wood] ensureToolFor completed')
       } else {
         bot.chat('⚠️ Geen axe, hak met blote hand tot genoeg materiaal')
       }
+      */
+      console.log('[Wood] Skipping auto-craft (temporarily disabled for debugging)')
     }
     
     // Equip best axe if we have one

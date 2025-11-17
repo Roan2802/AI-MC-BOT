@@ -63,7 +63,10 @@ bot.on('chat', (username, message) => {
 
 bot.on('error', (err) => {
   clearTimeout(connectionTimeout);
-  console.error('[Error]', err);
+  console.error('[Error] Full error:', err);
+  console.error('[Error] Error code:', err.code);
+  console.error('[Error] Error message:', err.message);
+  console.error('[Error] Stack:', err.stack);
   if (err.code === 'ECONNREFUSED') {
     console.error('[Agent01] Cannot connect to server. Is it running?');
     process.exit(1);

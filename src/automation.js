@@ -233,11 +233,11 @@ function createDefaultEngine(bot) {
     name: 'No Pickaxe → Craft Tool',
     priority: 65,
     condition: (b) => {
-      const { hasPickaxe } = require('./crafting.js')
+      const { hasPickaxe } = require('./crafting-tools.js')
       return !hasPickaxe(b)
     },
     action: async (b) => {
-      const { ensureStonePickaxe } = require('./crafting.js')
+      const { ensureStonePickaxe } = require('./crafting-tools.js')
       b.chat('⛏️ Geen pickaxe, maak gereedschap...')
       await ensureStonePickaxe(b)
     }

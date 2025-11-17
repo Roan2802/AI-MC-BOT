@@ -9,127 +9,11 @@
  */
 
 const { mineResource } = require('./mining.js')
-const { getBestAxe, ensureToolFor } = require('./crafting.js')
+const { getBestAxe, ensureToolFor, ensureWoodenAxe } = require('./crafting-tools.js')
+const { ensureCraftingTable } = require('./crafting-blocks.js')
+const { craftPlanksFromLogs, craftSticks } = require('./crafting-recipes.js')
 
-/**
- * Ensure crafting table is placed nearby
- * @param {import('mineflayer').Bot} bot
- * @returns {Promise<boolean>} true if crafting table available
- */
-async function ensureCraftingTable(bot) {
-  try {
-    if (!bot) return false
-    
-    // Check if crafting table already nearby
-    const craftingTable = bot.findBlock({
-      matching: b => b && b.name === 'crafting_table',
-      maxDistance: 5,
-      count: 1
-    })
-    
-    if (craftingTable) {
-      console.log('[Wood] Crafting table found nearby')
-      return true
-    }
-    
-    // Try to place one if we have materials
-    const planks = bot.inventory.items().find(i => i && i.name && i.name.includes('planks'))
-    if (!planks || planks.count < 4) {
-      console.log('[Wood] Not enough planks for crafting table')
-      return false
-    }
-    
-    console.log('[Wood] Crafting table not found, placing one...')
-    
-    // Place crafting table
-    const groundBlock = bot.blockAt(bot.entity.position.offset(1, -1, 0))
-    if (groundBlock && groundBlock.name !== 'air') {
-      try {
-        await bot.equip(planks, 'hand')
-        // Recipe: 4 planks = 1 crafting table
-        const recipes = bot.recipesFor(bot.registry.itemsByName['crafting_table'].id, null, 1, null)
-        if (recipes && recipes.length > 0) {
-          await bot.craft(recipes[0], 1)
-          console.log('[Wood] Crafting table crafted')
-          await new Promise(r => setTimeout(r, 300))
-          
-          // Place it
-          const craftingTableItem = bot.inventory.items().find(i => i && i.name === 'crafting_table')
-          if (craftingTableItem) {
-            await bot.equip(craftingTableItem, 'hand')
-            await bot.placeBlock(groundBlock, new bot.Vec3(1, 0, 0))
-            console.log('[Wood] Crafting table placed')
-            await new Promise(r => setTimeout(r, 300))
-            return true
-          }
-        }
-      } catch (e) {
-        console.log('[Wood] Failed to craft/place table:', e.message)
-      }
-    }
-    
-    return false
-  } catch (e) {
-    console.error('[Wood] ensureCraftingTable error:', e.message)
-    return false
-  }
-}
 
-/**
- * Ensure wooden axe is available (craft if needed)
- * @param {import('mineflayer').Bot} bot
- * @returns {Promise<boolean>} true if axe available
- */
-async function ensureWoodenAxe(bot) {
-  try {
-    if (!bot) return false
-    
-    // Check if already have axe
-    const axe = getBestAxe(bot)
-    if (axe) {
-      console.log('[Wood] Already have axe:', axe.name)
-      return true
-    }
-    
-    // Check if have materials for wooden axe (3 planks + 2 sticks)
-    const planks = bot.inventory.items().find(i => i && i.name && i.name.includes('planks'))
-    const sticks = bot.inventory.items().find(i => i && i.name === 'stick')
-    
-    if (!planks || planks.count < 3 || !sticks || sticks.count < 2) {
-      console.log('[Wood] Not enough materials for axe')
-      return false
-    }
-    
-    console.log('[Wood] Crafting wooden axe...')
-    
-    // Ensure crafting table nearby
-    const hasTable = await ensureCraftingTable(bot)
-    if (!hasTable) {
-      console.log('[Wood] Could not get crafting table, trying inventory craft')
-    }
-    
-    // Try to craft axe
-    try {
-      const axeItemId = bot.registry.itemsByName['wooden_axe']
-      if (axeItemId && typeof axeItemId.id === 'number') {
-        const recipes = bot.recipesFor(axeItemId.id, null, 1, null)
-        if (recipes && recipes.length > 0) {
-          await bot.craft(recipes[0], 1)
-          console.log('[Wood] Wooden axe crafted!')
-          await new Promise(r => setTimeout(r, 300))
-          return true
-        }
-      }
-    } catch (e) {
-      console.log('[Wood] Craft axe failed:', e.message)
-    }
-    
-    return false
-  } catch (e) {
-    console.error('[Wood] ensureWoodenAxe error:', e.message)
-    return false
-  }
-}
 
 /**
  * Plant all saplings in inventory at suitable locations nearby
@@ -447,109 +331,7 @@ async function replantSapling(bot, position, treeType = 'oak') {
   return false
 }
 
-/**
- * Craft planks from logs
- * @param {import('mineflayer').Bot} bot
- * @param {number} count - Number of plank sets to craft (1 log = 4 planks)
- * @returns {Promise<number>} planks crafted
- */
-async function craftPlanks(bot, count = 8) {
-  try {
-    if (!bot || !bot.inventory) {
-      console.log('[Wood] craftPlanks: Invalid bot')
-      return 0
-    }
 
-    const logs = bot.inventory.items().find(i => i && i.name && i.name.includes('log'))
-    if (!logs) {
-      console.log('[Wood] No logs to craft')
-      return 0
-    }
-
-    let plankType = 'oak_planks'
-    try {
-      plankType = logs.name.replace('_log', '_planks')
-    } catch (e) {
-      console.log('[Wood] Error parsing plank type, using default')
-    }
-
-    try {
-      const plankItemId = bot.registry.itemsByName[plankType]
-      if (!plankItemId || typeof plankItemId.id !== 'number') {
-        console.log('[Wood] Could not find plank item id')
-        return 0
-      }
-      
-      const recipes = bot.recipesFor(plankItemId.id, null, 1, null)
-      if (!recipes || recipes.length === 0) {
-        console.log('[Wood] No recipes for', plankType)
-        return 0
-      }
-
-      const toCraft = Math.min(count, logs.count)
-      await bot.craft(recipes[0], toCraft)
-      bot.chat(`🪵 ${toCraft * 4} planks gecraft`)
-      return toCraft * 4
-    } catch (e) {
-      console.error('[Wood] Craft planks execution error:', e.message)
-      return 0
-    }
-  } catch (e) {
-    console.error('[Wood] Craft planks error:', e.message)
-  }
-  return 0
-}
-
-/**
- * Craft sticks from planks
- * @param {import('mineflayer').Bot} bot
- * @param {number} count - Sets of sticks to craft (2 planks = 4 sticks)
- * @returns {Promise<number>} sticks crafted
- */
-async function craftSticks(bot, count = 4) {
-  try {
-    if (!bot || !bot.inventory) {
-      console.log('[Wood] craftSticks: Invalid bot')
-      return 0
-    }
-
-    let planks = bot.inventory.items().find(i => i && i.name && i.name.includes('planks'))
-    if (!planks) {
-      console.log('[Wood] No planks, trying to craft from logs')
-      await craftPlanks(bot, count)
-      planks = bot.inventory.items().find(i => i && i.name && i.name.includes('planks'))
-      if (!planks) {
-        console.log('[Wood] Still no planks after crafting')
-        return 0
-      }
-    }
-
-    try {
-      const stickItemId = bot.registry.itemsByName.stick
-      if (!stickItemId || typeof stickItemId.id !== 'number') {
-        console.log('[Wood] Could not find stick item id')
-        return 0
-      }
-
-      const recipes = bot.recipesFor(stickItemId.id, null, 1, null)
-      if (!recipes || recipes.length === 0) {
-        console.log('[Wood] No recipes for sticks')
-        return 0
-      }
-
-      const toCraft = Math.min(count, Math.floor(planks.count / 2))
-      await bot.craft(recipes[0], toCraft)
-      bot.chat(`🪵 ${toCraft * 4} sticks gecraft`)
-      return toCraft * 4
-    } catch (e) {
-      console.error('[Wood] Craft sticks execution error:', e.message)
-      return 0
-    }
-  } catch (e) {
-    console.error('[Wood] Craft sticks error:', e.message)
-  }
-  return 0
-}
 
 /**
  * Harvest wood blocks within a radius by felling whole trees.
@@ -851,7 +633,7 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
     if (opts.craftPlanks && collected > 0) {
       try {
         await new Promise(r => setTimeout(r, 500))
-        await craftPlanks(bot, Math.floor(collected / 2))
+        await craftPlanksFromLogs(bot, Math.floor(collected / 2))
       } catch (craftErr) {
         console.error('[Wood] Craft planks error:', craftErr.message)
       }
@@ -882,12 +664,8 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
 
 module.exports = { 
   harvestWood, 
-  craftPlanks, 
-  craftSticks, 
   findConnectedLogs,
   replantSapling,
   collectNearbyItems,
-  plantAllSaplings,
-  ensureCraftingTable,
-  ensureWoodenAxe
+  plantAllSaplings
 }

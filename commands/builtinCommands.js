@@ -8,7 +8,7 @@
 // ...existing code...
 const { followPlayer, goToPlayer, stop: stopMovement, moveToPosition, stay } = require('../src/movement.js')
 const { mineResource, mineOres } = require('../src/mining.js')
-const { ensureWoodenPickaxe, hasPickaxe, ensureToolFor, ensureStonePickaxe, ensureIronPickaxe } = require('../src/crafting.js')
+const { ensureWoodenPickaxe, hasPickaxe, ensureToolFor, ensureStonePickaxe, ensureIronPickaxe } = require('../src/crafting-tools.js')
 const { setHome, getHome, goHome } = require('../src/memory.js')
 const { goTo, selectSafeTarget } = require('../src/navigation.js')
 const { returnHomeAndStore } = require('../src/storage.js')

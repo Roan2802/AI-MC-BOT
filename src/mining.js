@@ -7,7 +7,7 @@
 
 const pathfinderPkg = require('mineflayer-pathfinder')
 const { Movements, goals } = pathfinderPkg
-const { ensureWoodenPickaxe, ensureStonePickaxe, hasPickaxe } = require('./crafting.js')
+const { ensureWoodenPickaxe, ensureStonePickaxe, hasPickaxe } = require('./crafting-tools.js')
 const { selectSafeTarget } = require('./navigation.js')
 
 /**

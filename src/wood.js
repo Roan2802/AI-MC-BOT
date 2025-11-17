@@ -19,36 +19,54 @@ const { getBestAxe, ensureToolFor } = require('./crafting.js')
  * @returns {Array<import('prismarine-block').Block>} array of log blocks
  */
 function findConnectedLogs(bot, startBlock, radius = 20) {
-  const origin = bot.entity.position
-  const visited = new Set()
-  const toVisit = [startBlock.position]
-  const blocks = []
-
-  const key = (p) => `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`
-
-  while (toVisit.length > 0 && blocks.length < 256) {
-    const pos = toVisit.shift()
-    const k = key(pos)
-    if (visited.has(k)) continue
-    visited.add(k)
-    const b = bot.blockAt(pos)
-    if (!b || !b.name) continue
-    if (!b.name.includes('log')) continue
-    if (pos.distanceTo(origin) > radius) continue
-    blocks.push(b)
-
-    // neighbors: up/down and 4 horizontal + diagonals for better detection
-    const neighbors = [
-      [1,0,0], [-1,0,0], [0,0,1], [0,0,-1], [0,1,0], [0,-1,0],
-      [1,0,1], [1,0,-1], [-1,0,1], [-1,0,-1] // diagonals
-    ]
-    for (const n of neighbors) {
-      const np = pos.offset(n[0], n[1], n[2])
-      const nk = key(np)
-      if (!visited.has(nk)) toVisit.push(np)
-    }
+  if (!bot || !startBlock || !startBlock.position) {
+    console.log('[Wood] findConnectedLogs: Invalid parameters')
+    return []
   }
-  return blocks
+  
+  try {
+    const origin = bot.entity.position
+    if (!origin) {
+      console.log('[Wood] findConnectedLogs: No entity position')
+      return []
+    }
+    
+    const visited = new Set()
+    const toVisit = [startBlock.position]
+    const blocks = []
+
+    const key = (p) => `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`
+
+    while (toVisit.length > 0 && blocks.length < 256) {
+      const pos = toVisit.shift()
+      if (!pos) continue
+      
+      const k = key(pos)
+      if (visited.has(k)) continue
+      visited.add(k)
+      
+      const b = bot.blockAt(pos)
+      if (!b || !b.name) continue
+      if (!b.name.includes('log')) continue
+      if (pos.distanceTo(origin) > radius) continue
+      blocks.push(b)
+
+      // neighbors: up/down and 4 horizontal + diagonals for better detection
+      const neighbors = [
+        [1,0,0], [-1,0,0], [0,0,1], [0,0,-1], [0,1,0], [0,-1,0],
+        [1,0,1], [1,0,-1], [-1,0,1], [-1,0,-1] // diagonals
+      ]
+      for (const n of neighbors) {
+        const np = pos.offset(n[0], n[1], n[2])
+        const nk = key(np)
+        if (!visited.has(nk)) toVisit.push(np)
+      }
+    }
+    return blocks
+  } catch (e) {
+    console.error('[Wood] findConnectedLogs error:', e.message)
+    return []
+  }
 }
 
 /**
@@ -59,28 +77,53 @@ function findConnectedLogs(bot, startBlock, radius = 20) {
  */
 async function collectNearbyItems(bot, radius = 10) {
   try {
+    // Check if pathfinder is available
+    if (!bot.pathfinder || !bot.pathfinder.goto) {
+      if (bot._debug) console.log('[Wood] Pathfinder not available, skipping item collection')
+      return
+    }
+    
     const pathfinderPkg = require('mineflayer-pathfinder')
+    if (!pathfinderPkg || !pathfinderPkg.goals) {
+      console.log('[Wood] Pathfinder package not loaded properly')
+      return
+    }
     const { goals } = pathfinderPkg
     
     // Items we want to collect
     const wantedItems = ['log', 'sapling', 'stick', 'apple', 'planks']
     
     const nearbyItems = Object.values(bot.entities).filter(e => {
-      // Check if entity is an item (use displayName or type instead of objectType)
-      if (!e.displayName || e.displayName !== 'Item') return false
-      if (!e.position) return false
-      if (e.position.distanceTo(bot.entity.position) >= radius) return false
-      
-      // Try to identify item type from metadata
-      if (e.metadata && e.metadata[8]) {
-        const itemId = e.metadata[8].itemId
-        if (itemId) {
-          const itemName = bot.registry.items[itemId]?.name || ''
-          return wantedItems.some(wanted => itemName.includes(wanted))
+      try {
+        // Skip if no position
+        if (!e || !e.position) return false
+        if (e.position.distanceTo(bot.entity.position) >= radius) return false
+        
+        // Check if entity is an item using objectType or name
+        const objType = e.objectType || e.name || ''
+        if (!objType.includes('item') && objType !== 'Item') return false
+        
+        // Try to identify item type from metadata
+        if (e.metadata && e.metadata[8] && typeof e.metadata[8] === 'object') {
+          try {
+            const itemStack = e.metadata[8]
+            const itemId = itemStack.itemId || itemStack.item_id
+            if (itemId && bot.registry && bot.registry.items && bot.registry.items[itemId]) {
+              const itemName = bot.registry.items[itemId].name || ''
+              return wantedItems.some(wanted => itemName.includes(wanted))
+            }
+          } catch (parseErr) {
+            // Metadata parsing failed, skip this entity
+            return false
+          }
         }
+        return false
+      } catch (filterErr) {
+        return false
       }
-      return false
     })
+    
+    if (bot._debug) console.log(`[Wood] Found ${nearbyItems.length} items to collect`)
     
     for (const item of nearbyItems) {
       try {
@@ -92,6 +135,7 @@ async function collectNearbyItems(bot, radius = 10) {
         await new Promise(r => setTimeout(r, 200)) // Let auto-pickup work
       } catch (e) {
         // Item may already be picked up or despawned
+        if (bot._debug) console.log('[Wood] Item collection error:', e.message)
       }
     }
   } catch (e) {
@@ -181,20 +225,47 @@ async function replantSapling(bot, position, treeType = 'oak') {
  */
 async function craftPlanks(bot, count = 8) {
   try {
-    const logs = bot.inventory.items().find(i => i.name && i.name.includes('log'))
-    if (!logs) return 0
+    if (!bot || !bot.inventory) {
+      console.log('[Wood] craftPlanks: Invalid bot')
+      return 0
+    }
 
-    const plankType = logs.name.replace('_log', '_planks')
-    const recipes = bot.recipesFor(bot.registry.itemsByName[plankType].id, null, 1, null)
-    
-    if (recipes && recipes.length > 0) {
+    const logs = bot.inventory.items().find(i => i && i.name && i.name.includes('log'))
+    if (!logs) {
+      console.log('[Wood] No logs to craft')
+      return 0
+    }
+
+    let plankType = 'oak_planks'
+    try {
+      plankType = logs.name.replace('_log', '_planks')
+    } catch (e) {
+      console.log('[Wood] Error parsing plank type, using default')
+    }
+
+    try {
+      const plankItemId = bot.registry.itemsByName[plankType]
+      if (!plankItemId || typeof plankItemId.id !== 'number') {
+        console.log('[Wood] Could not find plank item id')
+        return 0
+      }
+      
+      const recipes = bot.recipesFor(plankItemId.id, null, 1, null)
+      if (!recipes || recipes.length === 0) {
+        console.log('[Wood] No recipes for', plankType)
+        return 0
+      }
+
       const toCraft = Math.min(count, logs.count)
       await bot.craft(recipes[0], toCraft)
       bot.chat(`🪵 ${toCraft * 4} planks gecraft`)
       return toCraft * 4
+    } catch (e) {
+      console.error('[Wood] Craft planks execution error:', e.message)
+      return 0
     }
   } catch (e) {
-    if (bot._debug) console.log('[Wood] Craft planks failed:', e.message)
+    console.error('[Wood] Craft planks error:', e.message)
   }
   return 0
 }
@@ -207,20 +278,45 @@ async function craftPlanks(bot, count = 8) {
  */
 async function craftSticks(bot, count = 4) {
   try {
-    const planks = bot.inventory.items().find(i => i.name && i.name.includes('planks'))
-    if (!planks) {
-      await craftPlanks(bot, count)
+    if (!bot || !bot.inventory) {
+      console.log('[Wood] craftSticks: Invalid bot')
+      return 0
     }
 
-    const recipes = bot.recipesFor(bot.registry.itemsByName.stick.id, null, 1, null)
-    if (recipes && recipes.length > 0) {
+    let planks = bot.inventory.items().find(i => i && i.name && i.name.includes('planks'))
+    if (!planks) {
+      console.log('[Wood] No planks, trying to craft from logs')
+      await craftPlanks(bot, count)
+      planks = bot.inventory.items().find(i => i && i.name && i.name.includes('planks'))
+      if (!planks) {
+        console.log('[Wood] Still no planks after crafting')
+        return 0
+      }
+    }
+
+    try {
+      const stickItemId = bot.registry.itemsByName.stick
+      if (!stickItemId || typeof stickItemId.id !== 'number') {
+        console.log('[Wood] Could not find stick item id')
+        return 0
+      }
+
+      const recipes = bot.recipesFor(stickItemId.id, null, 1, null)
+      if (!recipes || recipes.length === 0) {
+        console.log('[Wood] No recipes for sticks')
+        return 0
+      }
+
       const toCraft = Math.min(count, Math.floor(planks.count / 2))
       await bot.craft(recipes[0], toCraft)
       bot.chat(`🪵 ${toCraft * 4} sticks gecraft`)
       return toCraft * 4
+    } catch (e) {
+      console.error('[Wood] Craft sticks execution error:', e.message)
+      return 0
     }
   } catch (e) {
-    if (bot._debug) console.log('[Wood] Craft sticks failed:', e.message)
+    console.error('[Wood] Craft sticks error:', e.message)
   }
   return 0
 }
@@ -256,198 +352,269 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
   let treesChopped = 0
 
   try {
-    console.log('[Wood] Loading pathfinder...')
-    const pathfinderPkg = require('mineflayer-pathfinder')
-    const { Movements, goals } = pathfinderPkg
-    console.log('[Wood] Pathfinder loaded, entering main loop')
+    console.log('[Wood] Verifying pathfinder availability...')
+    if (!bot.pathfinder || !bot.pathfinder.goto) {
+      console.error('[Wood] Pathfinder not initialized. Call setupPathfinder(bot) first!')
+      bot.chat('❌ Pathfinder niet beschikbaar')
+      return 0
+    }
+    console.log('[Wood] Pathfinder verified')
+
+    // Verify pathfinder package can be loaded
+    let pathfinderPkg, Movements, goals
+    try {
+      pathfinderPkg = require('mineflayer-pathfinder')
+      if (!pathfinderPkg || !pathfinderPkg.Movements || !pathfinderPkg.goals) {
+        throw new Error('Missing pathfinder components')
+      }
+      Movements = pathfinderPkg.Movements
+      goals = pathfinderPkg.goals
+      console.log('[Wood] Pathfinder package loaded successfully')
+    } catch (pkgErr) {
+      console.error('[Wood] Failed to load pathfinder package:', pkgErr.message)
+      bot.chat('❌ Kon pathfinder package niet laden')
+      return 0
+    }
 
     // Continue until we reach maxBlocks or no more trees found
     while (collected < maxBlocks) {
       console.log(`[Wood] Loop iteration - collected: ${collected}/${maxBlocks}`)
       
-      // STEP 1: Sapling planting disabled temporarily for debugging
-      // TODO: Re-enable after fixing crash
-      
-      console.log('[Wood] STEP 2: Check axe')
+      console.log('[Wood] STEP 1: Check axe')
       console.log('[Wood] About to call getBestAxe...')
       
-      // STEP 2: Check if we have an axe, try to craft one if we have materials
-      const currentAxe = getBestAxe(bot)
-      console.log('[Wood] getBestAxe returned:', currentAxe ? currentAxe.name : 'null')
-    
-    console.log('[Wood] Checking if need to craft axe...')
-    if (!currentAxe) {
-      console.log('[Wood] No axe found, checking materials...')
-      // Try to craft axe if we have enough materials
-      const hasLogs = bot.inventory.items().find(i => i.name && i.name.includes('log'))
-      const hasPlanks = bot.inventory.items().find(i => i.name && i.name.includes('planks'))
-      const hasSticks = bot.inventory.items().find(i => i.name === 'stick')
-      
-      console.log('[Wood] Materials check:', { hasLogs: !!hasLogs, hasPlanks: !!hasPlanks, hasSticks: !!hasSticks })
-      
-      // TEMPORARILY DISABLED: Auto-crafting causes server disconnect
-      // Only try to craft if we have some materials (at least logs or planks+sticks)
-      /*
-      if ((hasLogs && hasLogs.count >= 2) || (hasPlanks && hasPlanks.count >= 3 && hasSticks && hasSticks.count >= 2)) {
-        console.log('[Wood] About to call ensureToolFor...')
-        bot.chat('🔨 Probeer axe te craften...')
-        await ensureToolFor(bot, 'wood')
-        console.log('[Wood] ensureToolFor completed')
-      } else {
-        bot.chat('⚠️ Geen axe, hak met blote hand tot genoeg materiaal')
-      }
-      */
-      console.log('[Wood] Skipping auto-craft (temporarily disabled for debugging)')
-    }
-    
-    console.log('[Wood] STEP 3: Equip best tool')
-    // Equip best axe if we have one
-    const bestAxe = getBestAxe(bot)
-    console.log('[Wood] Best axe found:', bestAxe ? bestAxe.name : 'null')
-    if (bestAxe) {
-      console.log('[Wood] Equipping axe...')
-      await bot.equip(bestAxe, 'hand')
-      console.log('[Wood] Axe equipped')
-    } else {
-      console.log('[Wood] No axe, unequipping hand...')
-      // Unequip to use bare hands
+      // STEP 1: Check if we have an axe
+      let currentAxe
       try {
-        await bot.unequip('hand')
-        console.log('[Wood] Hand unequipped')
-      } catch (e) {
-        console.log('[Wood] Already bare hands')
-        // Already bare hands
+        currentAxe = getBestAxe(bot)
+        console.log('[Wood] getBestAxe returned:', currentAxe ? currentAxe.name : 'null')
+      } catch (axeErr) {
+        console.error('[Wood] getBestAxe error:', axeErr.message)
+        currentAxe = null
       }
-    }
     
-    console.log('[Wood] STEP 4: Find tree')
-    const origin = bot.entity.position
-    
-    console.log('[Wood] Searching for log blocks...')
-    // STEP 3: Find nearest log block
-    const logBlock = bot.findBlock({
-      matching: b => b && b.name && b.name.includes('log'),
-      maxDistance: radius,
-      count: 1
-    })
-    
-    console.log('[Wood] Log block found:', logBlock ? logBlock.name : 'null')
-    if (!logBlock) {
-      if (bot._debug) console.log('[Wood] No more trees found')
-      break
-    }
-
-    console.log('[Wood] Getting tree type...')
-    // Get tree type for sapling
-    const treeType = logBlock.name.replace('_log', '')
-    const basePos = logBlock.position.clone()
-
-    console.log('[Wood] Finding connected logs...')
-    // Find all connected logs in this tree
-    const cluster = findConnectedLogs(bot, logBlock, radius)
-    console.log('[Wood] Cluster found:', cluster ? cluster.length : 'null')
-    if (!cluster || cluster.length === 0) break
-
-    console.log('[Wood] About to send chat message...')
-    bot.chat(`🌲 Boom hakken: ${cluster.length} logs (${treeType})`)
-    console.log('[Wood] Chat message sent')
-
-    console.log('[Wood] Sorting cluster...')
-    // Sort by y descending (top to bottom) to prevent floating logs
-    cluster.sort((a, b) => b.position.y - a.position.y)
-    console.log('[Wood] Cluster sorted, starting mining loop')
-
-    // STEP 4: Mine all logs in this tree
-    for (const block of cluster) {
-      console.log('[Wood] Mining block at', block.position, 'collected:', collected, '/', maxBlocks)
-      if (collected >= maxBlocks) break
-      
+      console.log('[Wood] STEP 2: Equip best tool')
+      // Equip best axe if we have one
+      let bestAxe
       try {
-        console.log('[Wood] Checking distance to block...')
-        // Navigate to block if too far
-        const dist = bot.entity.position.distanceTo(block.position)
-        console.log('[Wood] Distance:', dist)
-        if (dist > 4.5) {
-          console.log('[Wood] Too far, navigating...')
-          const movements = new Movements(bot)
-          movements.canDig = true // Allow breaking obstacles
-          bot.pathfinder.setMovements(movements)
-          
+        bestAxe = getBestAxe(bot)
+        if (bestAxe) {
+          console.log('[Wood] Equipping axe:', bestAxe.name)
+          await bot.equip(bestAxe, 'hand')
+          console.log('[Wood] Axe equipped')
+        } else {
+          console.log('[Wood] No axe, unequipping hand...')
           try {
-            const goal = new goals.GoalNear(block.position.x, block.position.y, block.position.z, 3)
-            await bot.pathfinder.goto(goal)
-            console.log('[Wood] Navigation complete')
-          } catch (navError) {
-            console.log('[Wood] Navigation failed:', navError.message)
-            // If stuck, try to break obstacle
-            if (bot._debug) console.log('[Wood] Navigation blocked, trying to clear path')
-            const obstacle = bot.blockAt(bot.entity.position.offset(0, 0, 1))
-            if (obstacle && obstacle.name !== 'air' && obstacle.diggable) {
-              await bot.dig(obstacle)
-              await new Promise(r => setTimeout(r, 300))
-            }
+            await bot.unequip('hand')
+          } catch (e) {
+            console.log('[Wood] Already bare hands')
           }
         }
-        
-        console.log('[Wood] Equipping axe...')
-        // Equip best axe before digging
-        const axe = getBestAxe(bot)
-        if (axe) await bot.equip(axe, 'hand')
-        console.log('[Wood] Axe equipped, starting dig...')
+      } catch (equipErr) {
+        console.error('[Wood] Equip error:', equipErr.message)
+      }
+      
+      console.log('[Wood] STEP 3: Find tree')
+      // STEP 3: Find nearest log block
+      let logBlock
+      try {
+        logBlock = bot.findBlock({
+          matching: b => {
+            try {
+              return b && b.name && b.name.includes('log')
+            } catch (e) {
+              return false
+            }
+          },
+          maxDistance: radius,
+          count: 1
+        })
+        console.log('[Wood] Log block found:', logBlock ? logBlock.name : 'null')
+      } catch (findErr) {
+        console.error('[Wood] Error finding log:', findErr.message)
+        logBlock = null
+      }
+      
+      if (!logBlock) {
+        console.log('[Wood] No more trees found, breaking loop')
+        break
+      }
 
-        // Dig the block
-        await bot.dig(block, true)
-        console.log('[Wood] Block dug successfully')
-        collected++
-        
-        // Small delay for drops to spawn
-        await new Promise(r => setTimeout(r, 300))
-        
+      console.log('[Wood] Getting tree type...')
+      // Get tree type for sapling
+      let treeType = 'oak'
+      try {
+        treeType = logBlock.name.replace('_log', '')
       } catch (e) {
-        console.log('[Wood] Dig failed with error:', e.message)
-        if (bot._debug) console.log('[Wood] Dig failed:', e.message)
+        console.log('[Wood] Error parsing tree type, using default oak')
+      }
+
+      console.log('[Wood] Finding connected logs...')
+      let cluster
+      try {
+        cluster = findConnectedLogs(bot, logBlock, radius)
+        console.log('[Wood] Cluster found:', cluster ? cluster.length : 'null')
+      } catch (clusterErr) {
+        console.error('[Wood] Error finding cluster:', clusterErr.message)
+        cluster = []
+      }
+      
+      if (!cluster || cluster.length === 0) {
+        console.log('[Wood] Empty cluster, breaking')
+        break
+      }
+
+      console.log('[Wood] Cluster has', cluster.length, 'logs')
+      try {
+        bot.chat(`🌲 Boom hakken: ${cluster.length} logs (${treeType})`)
+      } catch (chatErr) {
+        console.log('[Wood] Chat error:', chatErr.message)
+      }
+
+      console.log('[Wood] Sorting cluster...')
+      // Sort by y descending (top to bottom) to prevent floating logs
+      try {
+        cluster.sort((a, b) => b.position.y - a.position.y)
+      } catch (sortErr) {
+        console.error('[Wood] Sort error:', sortErr.message)
+      }
+
+      console.log('[Wood] Starting mining loop for', cluster.length, 'blocks')
+
+      // STEP 4: Mine all logs in this tree
+      for (const block of cluster) {
+        if (!block || !block.position) {
+          console.log('[Wood] Invalid block, skipping')
+          continue
+        }
+        
+        console.log('[Wood] Mining block at', block.position, 'collected:', collected, '/', maxBlocks)
+        if (collected >= maxBlocks) break
+        
+        try {
+          console.log('[Wood] Checking distance to block...')
+          // Navigate to block if too far
+          const dist = bot.entity.position.distanceTo(block.position)
+          console.log('[Wood] Distance:', dist)
+          
+          if (dist > 4.5) {
+            console.log('[Wood] Too far, navigating...')
+            try {
+              const movements = new Movements(bot)
+              movements.canDig = true // Allow breaking obstacles
+              bot.pathfinder.setMovements(movements)
+              
+              const goal = new goals.GoalNear(block.position.x, block.position.y, block.position.z, 3)
+              await bot.pathfinder.goto(goal)
+              console.log('[Wood] Navigation complete')
+            } catch (navError) {
+              console.log('[Wood] Navigation failed:', navError.message)
+              // If stuck, try to break obstacle
+              if (bot._debug) console.log('[Wood] Navigation blocked, trying to clear path')
+              try {
+                const obstacle = bot.blockAt(bot.entity.position.offset(0, 0, 1))
+                if (obstacle && obstacle.name !== 'air' && obstacle.diggable) {
+                  await bot.dig(obstacle)
+                  await new Promise(r => setTimeout(r, 300))
+                }
+              } catch (obsErr) {
+                console.log('[Wood] Obstacle clear failed:', obsErr.message)
+              }
+            }
+          }
+          
+          console.log('[Wood] Equipping axe before dig...')
+          // Equip best axe before digging
+          try {
+            const axe = getBestAxe(bot)
+            if (axe) await bot.equip(axe, 'hand')
+          } catch (eqErr) {
+            console.log('[Wood] Equip for dig failed:', eqErr.message)
+          }
+
+          console.log('[Wood] Starting dig...')
+          // Dig the block
+          await bot.dig(block, true)
+          console.log('[Wood] Block dug successfully')
+          collected++
+          
+          // Small delay for drops to spawn
+          await new Promise(r => setTimeout(r, 300))
+          
+        } catch (e) {
+          console.log('[Wood] Dig failed with error:', e.message)
+          if (bot._debug) console.log('[Wood] Dig error stack:', e.stack)
+        }
+      }
+
+      treesChopped++
+      console.log('[Wood] Tree chopped, total trees:', treesChopped)
+      try {
+        bot.chat(`✅ Boom ${treesChopped} gehakt`)
+      } catch (chatErr) {
+        console.log('[Wood] Chat error:', chatErr.message)
+      }
+
+      console.log('[Wood] STEP 5: Collect items')
+      // STEP 5: Collect all items from this tree
+      try {
+        await new Promise(r => setTimeout(r, 1000)) // Wait for all drops
+        console.log('[Wood] About to call collectNearbyItems...')
+        await collectNearbyItems(bot, 15)
+        console.log('[Wood] collectNearbyItems completed')
+        bot.chat(`📦 Items verzameld`)
+      } catch (collectErr) {
+        console.error('[Wood] Item collection error:', collectErr.message)
+      }
+
+      // Small break before next tree
+      await new Promise(r => setTimeout(r, 500))
+    }
+
+    console.log('[Wood] Main loop complete, performing final cleanup')
+
+    // Final item collection sweep
+    try {
+      await collectNearbyItems(bot, 20)
+    } catch (finalErr) {
+      console.error('[Wood] Final collection error:', finalErr.message)
+    }
+
+    try {
+      bot.chat(`✅ Houthakken klaar: ${collected} logs van ${treesChopped} bomen`)
+    } catch (chatErr) {
+      console.log('[Wood] Final chat error:', chatErr.message)
+    }
+
+    // Auto-craft if enabled and we have logs
+    if (opts.craftPlanks && collected > 0) {
+      try {
+        await new Promise(r => setTimeout(r, 500))
+        await craftPlanks(bot, Math.floor(collected / 2))
+      } catch (craftErr) {
+        console.error('[Wood] Craft planks error:', craftErr.message)
       }
     }
 
-    treesChopped++
-    console.log('[Wood] Tree chopped, total trees:', treesChopped)
-    bot.chat(`✅ Boom ${treesChopped} gehakt`)
+    if (opts.craftSticks && collected > 0) {
+      try {
+        await new Promise(r => setTimeout(r, 500))
+        await craftSticks(bot, Math.floor(collected / 4))
+      } catch (craftErr) {
+        console.error('[Wood] Craft sticks error:', craftErr.message)
+      }
+    }
 
-    console.log('[Wood] STEP 5: Collect items')
-    // STEP 5: Collect all items from this tree
-    await new Promise(r => setTimeout(r, 1000)) // Wait for all drops
-    console.log('[Wood] About to call collectNearbyItems...')
-    await collectNearbyItems(bot, 15)
-    console.log('[Wood] collectNearbyItems completed')
-    bot.chat(`📦 Items verzameld`)
-
-    // Note: Saplings will be planted at the start of next loop iteration (before crafting table)
-
-    // Small break before next tree
-    await new Promise(r => setTimeout(r, 500))
-  }
-
-  // Final item collection sweep
-  await collectNearbyItems(bot, 20)
-
-  bot.chat(`✅ Houthakken klaar: ${collected} logs van ${treesChopped} bomen`)
-
-  // Auto-craft if enabled and we have logs
-  if (opts.craftPlanks && collected > 0) {
-    await new Promise(r => setTimeout(r, 500))
-    await craftPlanks(bot, Math.floor(collected / 2))
-  }
-
-  if (opts.craftSticks && collected > 0) {
-    await new Promise(r => setTimeout(r, 500))
-    await craftSticks(bot, Math.floor(collected / 4))
-  }
-
-  return collected
+    return collected
   
   } catch (error) {
-    console.error('[Wood] harvestWood error:', error)
-    bot.chat(`❌ Error tijdens houthakken: ${error.message}`)
+    console.error('[Wood] harvestWood outer error:', error)
+    console.error('[Wood] Stack:', error.stack)
+    try {
+      bot.chat(`❌ Error tijdens houthakken: ${error.message}`)
+    } catch (chatErr) {
+      console.error('[Wood] Error chat message failed:', chatErr.message)
+    }
     return collected
   }
 }

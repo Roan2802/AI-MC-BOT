@@ -749,30 +749,40 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
     try {
       const craftingTable = bot.findBlock({
         matching: b => b && b.name === 'crafting_table',
-        maxDistance: 20,
+        maxDistance: 50,
         count: 1
       })
       if (craftingTable) {
-        console.log('[Wood] Found crafting table, picking up...')
+        console.log('[Wood] Found crafting table at', craftingTable.position, ', picking up...')
         const dist = bot.entity.position.distanceTo(craftingTable.position)
+        
+        // Navigate to crafting table if too far
         if (dist > 4) {
+          console.log('[Wood] Crafting table is', Math.round(dist), 'blocks away, navigating...')
           try {
             const movements = new Movements(bot)
             bot.pathfinder.setMovements(movements)
             const goal = new goals.GoalNear(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z, 2)
             await bot.pathfinder.goto(goal)
           } catch (navErr) {
-            console.log('[Wood] Could not navigate to crafting table')
+            console.log('[Wood] Could not navigate to crafting table:', navErr.message)
           }
         }
-        // Mine it
+        
+        // Mine it with timeout
         try {
-          await bot.dig(craftingTable)
-          console.log('[Wood] Crafting table picked up')
+          console.log('[Wood] Mining crafting table...')
+          await Promise.race([
+            bot.dig(craftingTable),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Dig timeout')), 5000))
+          ])
+          console.log('[Wood] ✅ Crafting table picked up')
           await new Promise(r => setTimeout(r, 300))
         } catch (digErr) {
           console.log('[Wood] Could not dig crafting table:', digErr.message)
         }
+      } else {
+        console.log('[Wood] No crafting table found within 50 blocks')
       }
     } catch (tableErr) {
       console.log('[Wood] Crafting table pickup error:', tableErr.message)

@@ -523,8 +523,6 @@ module.exports = {
         return
       }
       
-      bot.chat(`📦 Inventaris (${items.length} items):`)
-      
       // Group by item type and show counts
       const itemMap = {}
       for (const item of items) {
@@ -534,10 +532,12 @@ module.exports = {
         itemMap[item.name] += item.count
       }
       
-      // Display grouped items
-      for (const [name, count] of Object.entries(itemMap)) {
-        bot.chat(`  • ${name}: ${count}x`)
-      }
+      // Display grouped items - combine messages to avoid spam
+      const itemList = Object.entries(itemMap)
+        .map(([name, count]) => `${name}:${count}x`)
+        .join(' | ')
+      
+      bot.chat(`📦 Inventaris (${items.length} types): ${itemList}`)
     } catch (e) {
       bot.chat(`❌ Inventaris fout: ${e.message}`)
     }
@@ -577,6 +577,56 @@ module.exports = {
     bot.chat('Beschikbare commando\'s:')
     for (const cmd of commands) {
       bot.chat(`  ${cmd}`)
+    }
+  },
+
+  /**
+   * debug_recipes - Show available axe and pickaxe recipes in registry
+   */
+  async debug_recipes(bot) {
+    try {
+      bot.chat('🔍 Searching for axe recipes...')
+      
+      // List all items containing 'axe'
+      const axeItems = Object.entries(bot.registry.itemsByName)
+        .filter(([name]) => name.includes('axe'))
+        .map(([name]) => name)
+      
+      if (axeItems.length > 0) {
+        bot.chat(`Found ${axeItems.length} axe items: ${axeItems.join(', ')}`)
+        
+        // Check recipes for each
+        for (const axeName of axeItems) {
+          const item = bot.registry.itemsByName[axeName]
+          if (item && item.id) {
+            const recipes = bot.recipesFor(item.id, null, 1, null)
+            bot.chat(`  ${axeName}: ${recipes ? recipes.length : 0} recipe(s)`)
+          }
+        }
+      } else {
+        bot.chat('No axe items found in registry')
+      }
+      
+      // Same for pickaxes
+      bot.chat('🔍 Searching for pickaxe recipes...')
+      const pickItems = Object.entries(bot.registry.itemsByName)
+        .filter(([name]) => name.includes('pickaxe'))
+        .map(([name]) => name)
+      
+      if (pickItems.length > 0) {
+        bot.chat(`Found ${pickItems.length} pickaxe items: ${pickItems.join(', ')}`)
+        for (const pickName of pickItems) {
+          const item = bot.registry.itemsByName[pickName]
+          if (item && item.id) {
+            const recipes = bot.recipesFor(item.id, null, 1, null)
+            bot.chat(`  ${pickName}: ${recipes ? recipes.length : 0} recipe(s)`)
+          }
+        }
+      } else {
+        bot.chat('No pickaxe items found in registry')
+      }
+    } catch (e) {
+      bot.chat(`Debug error: ${e.message}`)
     }
   }
 }

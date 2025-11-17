@@ -64,24 +64,37 @@ function getBestAxe(bot) {
 }
 
 /**
- * Generic tool crafting
+ * Generic tool crafting with fallback names
  */
-async function tryCraft(bot, itemName, amount = 1) {
+async function tryCraft(bot, itemName, amount = 1, fallbackNames = []) {
   try {
-    const item = bot.registry.itemsByName[itemName]
+    let item = bot.registry.itemsByName[itemName]
+    let actualName = itemName
+    
+    // Try fallback names if primary not found
+    if (!item && fallbackNames.length > 0) {
+      for (const fallback of fallbackNames) {
+        item = bot.registry.itemsByName[fallback]
+        if (item) {
+          actualName = fallback
+          break
+        }
+      }
+    }
+    
     if (!item) {
-      console.log(`[Crafting] Item ${itemName} not in registry`)
+      console.log(`[Crafting] Item ${itemName} not in registry (tried: ${fallbackNames.join(', ')})`)
       return false
     }
     
     const recipes = bot.recipesFor(item.id, null, 1, null)
     if (!recipes || recipes.length === 0) {
-      console.log(`[Crafting] No recipe for ${itemName}`)
+      console.log(`[Crafting] No recipe for ${actualName}`)
       return false
     }
     
     await bot.craft(recipes[0], amount)
-    console.log(`[Crafting] Crafted ${amount}x ${itemName}`)
+    console.log(`[Crafting] Crafted ${amount}x ${actualName}`)
     return true
   } catch (e) {
     console.error(`[Crafting] Error crafting ${itemName}:`, e.message)
@@ -106,7 +119,7 @@ async function ensureWoodenPickaxe(bot) {
   }
   
   try {
-    return await tryCraft(bot, 'wooden_pickaxe', 1)
+    return await tryCraft(bot, 'wooden_pickaxe', 1, ['pickaxe', 'oak_pickaxe'])
   } catch (e) {
     console.error('[Crafting] Wooden pickaxe craft failed:', e.message)
     return false
@@ -130,7 +143,8 @@ async function ensureWoodenAxe(bot) {
   }
   
   try {
-    return await tryCraft(bot, 'wooden_axe', 1)
+    // Try wooden_axe first, then fallback names
+    return await tryCraft(bot, 'wooden_axe', 1, ['axe', 'oak_axe'])
   } catch (e) {
     console.error('[Crafting] Wooden axe craft failed:', e.message)
     return false

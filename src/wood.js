@@ -9,7 +9,7 @@
  */
 
 const { mineResource } = require('./mining.js')
-const { getBestAxe } = require('./crafting.js')
+const { getBestAxe, ensureToolFor } = require('./crafting.js')
 
 /**
  * Find connected log blocks (flood-fill) starting from a root log.
@@ -271,7 +271,6 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
       console.log('[Wood] STEP 2: Check axe')
       
       // STEP 2: Check if we have an axe, try to craft one if we have materials
-      const { ensureToolFor } = require('./crafting.js')
       const currentAxe = getBestAxe(bot)
     
     if (!currentAxe) {

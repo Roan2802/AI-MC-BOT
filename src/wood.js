@@ -65,16 +65,22 @@ async function collectNearbyItems(bot, radius = 10) {
     // Items we want to collect
     const wantedItems = ['log', 'sapling', 'stick', 'apple', 'planks']
     
-    const nearbyItems = Object.values(bot.entities).filter(e => 
-      e.objectType === 'Item' && 
-      e.position.distanceTo(bot.entity.position) < radius &&
-      e.metadata && e.metadata[8] && // Item has metadata
-      wantedItems.some(wanted => {
-        const itemName = e.metadata[8].itemId ? 
-          bot.registry.items[e.metadata[8].itemId]?.name || '' : ''
-        return itemName.includes(wanted)
-      })
-    )
+    const nearbyItems = Object.values(bot.entities).filter(e => {
+      // Check if entity is an item (use displayName or type instead of objectType)
+      if (!e.displayName || e.displayName !== 'Item') return false
+      if (!e.position) return false
+      if (e.position.distanceTo(bot.entity.position) >= radius) return false
+      
+      // Try to identify item type from metadata
+      if (e.metadata && e.metadata[8]) {
+        const itemId = e.metadata[8].itemId
+        if (itemId) {
+          const itemName = bot.registry.items[itemId]?.name || ''
+          return wantedItems.some(wanted => itemName.includes(wanted))
+        }
+      }
+      return false
+    })
     
     for (const item of nearbyItems) {
       try {

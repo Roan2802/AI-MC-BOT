@@ -2,7 +2,6 @@ import builtin from './builtinCommands.js'
 import { parseIntent } from '../nlp/intentParser.js'
 import { createDefaultEngine } from '../src/automation.js'
 import { startSafetyMonitor } from '../src/safetyMonitor.js'
-import { startCombatMonitor } from '../src/combat.js'
 import { tryInitEnhanced, enableAutoEat } from '../src/combatEnhanced.js'
 
 /**
@@ -39,12 +38,7 @@ export default function initCommandRouter(bot) {
       console.error('[Safety] Kon safety monitor niet starten:', e && e.message)
     }
 
-    try {
-      startCombatMonitor(bot, { intervalMs: 1200, scanRange: 12, fleeHealth: 6 })
-      console.log('[Combat] Combat monitor gestart')
-    } catch (e) {
-      console.error('[Combat] Kon combat monitor niet starten:', e && e.message)
-    }
+    // Combat monitor wordt nu automatisch gestart via het nieuwe combat-systeem in bot.js
 
     // Try to initialize optional enhanced combat features (plugins)
     try {

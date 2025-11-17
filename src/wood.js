@@ -334,6 +334,83 @@ async function replantSapling(bot, position, treeType = 'oak') {
 
 
 /**
+ * Helper: Detect if bot is stuck and try to escape
+ * @param {import('mineflayer').Bot} bot
+ * @returns {Promise<boolean>} true if unstuck was needed
+ */
+async function tryUnstuck(bot) {
+  try {
+    // Try to mine blocks around bot to escape
+    const around = [
+      bot.entity.position.offset(1, 0, 0),
+      bot.entity.position.offset(-1, 0, 0),
+      bot.entity.position.offset(0, 0, 1),
+      bot.entity.position.offset(0, 0, -1),
+      bot.entity.position.offset(1, 0, 1),
+      bot.entity.position.offset(-1, 0, -1),
+    ]
+    
+    for (const pos of around) {
+      const block = bot.blockAt(pos)
+      if (block && block.name !== 'air' && block.diggable && 
+          !block.name.includes('bedrock') && !block.name.includes('obsidian')) {
+        console.log('[Wood] Unstuck: Mining block at', pos.x, pos.z)
+        await bot.dig(block)
+        await new Promise(r => setTimeout(r, 300))
+        return true
+      }
+    }
+  } catch (e) {
+    console.log('[Wood] Unstuck failed:', e.message)
+  }
+  return false
+}
+
+/**
+ * Helper: Place blocks to create path for faster navigation
+ * @param {import('mineflayer').Bot} bot
+ * @param {Vec3} targetPos
+ */
+async function createPathWithBlocks(bot, targetPos) {
+  try {
+    const start = bot.entity.position
+    const dx = targetPos.x - start.x
+    const dz = targetPos.z - start.z
+    const distance = Math.sqrt(dx*dx + dz*dz)
+    
+    if (distance < 8) return // Only for far distances
+    
+    // Place blocks every 8 blocks to create path
+    const steps = Math.floor(distance / 8)
+    for (let i = 1; i <= steps; i++) {
+      const ratio = i / steps
+      const x = Math.floor(start.x + dx * ratio)
+      const z = Math.floor(start.z + dz * ratio)
+      const y = Math.floor(start.y)
+      
+      const blockBelow = bot.blockAt({ x, y: y-1, z })
+      const blockAbove = bot.blockAt({ x, y, z })
+      
+      if (blockAbove && blockAbove.name === 'air' && blockBelow && blockBelow.diggable === false) {
+        // Place temporary block
+        try {
+          const dirt = bot.inventory.items().find(it => it && it.name === 'dirt')
+          if (dirt) {
+            await bot.equip(dirt, 'hand')
+            await bot.placeBlock(blockBelow, new bot.Vec3(0, 1, 0))
+            await new Promise(r => setTimeout(r, 100))
+          }
+        } catch (e) {
+          // Skip if placement fails
+        }
+      }
+    }
+  } catch (e) {
+    // Silently fail - pathfinding will handle it
+  }
+}
+
+/**
  * Harvest wood blocks within a radius by felling whole trees.
  * Features:
  * - Complete tree felling (top to bottom, no floating logs)
@@ -372,26 +449,55 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
     }
     console.log('[Wood] Pathfinder verified')
 
-    // STEP 0: Ensure we have an axe (craft if needed)
-    console.log('[Wood] STEP 0: Checking axe availability...')
-    const hasAxe = getBestAxe(bot)
-    if (!hasAxe) {
-      console.log('[Wood] No axe found, attempting to craft one...')
-      bot.chat('🔨 Probeer axe te craften...')
-      try {
+    // STEP 0: PREPARE TOOLS FIRST (before main loop)
+    console.log('[Wood] STEP 0: Preparing tools...')
+    bot.chat('🔨 Gereedschap voorbereiden...')
+    
+    try {
+      // 1. Ensure crafting table exists
+      console.log('[Wood] - Crafting table checken...')
+      const hasTable = await ensureCraftingTable(bot)
+      if (hasTable) {
+        console.log('[Wood] - ✅ Crafting table available')
+      }
+      
+      // 2. Check logs and craft planks if needed
+      const logs = bot.inventory.items().find(i => i && i.name && i.name.includes('log'))
+      if (logs) {
+        console.log('[Wood] - Found logs, crafting planks...')
+        await craftPlanksFromLogs(bot, Math.min(logs.count, 10))
+        await new Promise(r => setTimeout(r, 300))
+      }
+      
+      // 3. Check planks and craft sticks if needed
+      const planks = bot.inventory.items().find(i => i && i.name && i.name.includes('planks'))
+      if (planks && planks.count >= 2) {
+        console.log('[Wood] - Found planks, crafting sticks...')
+        await craftSticks(bot, Math.min(Math.floor(planks.count / 2), 10))
+        await new Promise(r => setTimeout(r, 300))
+      }
+      
+      // 4. Craft axe if needed
+      const hasAxe = getBestAxe(bot)
+      if (!hasAxe) {
+        console.log('[Wood] - No axe, crafting one...')
         const axieCrafted = await ensureWoodenAxe(bot)
         if (axieCrafted) {
-          console.log('[Wood] Axe successfully crafted!')
-          bot.chat('✅ Axe gecraft')
+          console.log('[Wood] - ✅ Axe crafted!')
+          bot.chat('✅ Gereedschap klaar!')
         } else {
-          console.log('[Wood] Could not craft axe, will use bare hands')
+          console.log('[Wood] - Could not craft axe, will use bare hands')
           bot.chat('⚠️ Geen axe, hak met blote hand')
         }
-      } catch (axeErr) {
-        console.error('[Wood] Axe crafting error:', axeErr.message)
+      } else {
+        console.log('[Wood] - ✅ Already have axe:', hasAxe.name)
       }
-      await new Promise(r => setTimeout(r, 500))
+    } catch (prepErr) {
+      console.error('[Wood] Tool preparation error:', prepErr.message)
+      bot.chat('⚠️ Tool prep error, continuing...')
     }
+    
+    await new Promise(r => setTimeout(r, 500))
 
     console.log('[Wood] Loading pathfinder package...')
     try {
@@ -531,6 +637,18 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
           
           if (dist > 4.5) {
             console.log('[Wood] Too far, navigating...')
+            
+            // Try to place path blocks for faster navigation
+            try {
+              await createPathWithBlocks(bot, block.position)
+            } catch (pathErr) {
+              // Silently fail
+            }
+            
+            // Track position to detect if stuck
+            const startPos = bot.entity.position.clone()
+            const startTime = Date.now()
+            
             try {
               const movements = new Movements(bot)
               movements.canDig = true // Allow breaking obstacles
@@ -541,6 +659,20 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
               console.log('[Wood] Navigation complete')
             } catch (navError) {
               console.log('[Wood] Navigation failed:', navError.message)
+              
+              // Check if stuck (no movement in 10 seconds)
+              const timePassed = Date.now() - startTime
+              const posDiff = bot.entity.position.distanceTo(startPos)
+              
+              if (timePassed > 10000 && posDiff < 1) {
+                console.log('[Wood] STUCK! Trying to escape...')
+                const unstuck = await tryUnstuck(bot)
+                if (unstuck) {
+                  console.log('[Wood] Escaped! Retrying navigation...')
+                  await new Promise(r => setTimeout(r, 500))
+                }
+              }
+              
               // If stuck, try to break obstacle
               if (bot._debug) console.log('[Wood] Navigation blocked, trying to clear path')
               try {
@@ -612,15 +744,49 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
       console.error('[Wood] Final collection error:', finalErr.message)
     }
 
+    // STEP 7: Pick up crafting table if it was placed
+    console.log('[Wood] STEP 7: Picking up crafting table...')
+    try {
+      const craftingTable = bot.findBlock({
+        matching: b => b && b.name === 'crafting_table',
+        maxDistance: 20,
+        count: 1
+      })
+      if (craftingTable) {
+        console.log('[Wood] Found crafting table, picking up...')
+        const dist = bot.entity.position.distanceTo(craftingTable.position)
+        if (dist > 4) {
+          try {
+            const movements = new Movements(bot)
+            bot.pathfinder.setMovements(movements)
+            const goal = new goals.GoalNear(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z, 2)
+            await bot.pathfinder.goto(goal)
+          } catch (navErr) {
+            console.log('[Wood] Could not navigate to crafting table')
+          }
+        }
+        // Mine it
+        try {
+          await bot.dig(craftingTable)
+          console.log('[Wood] Crafting table picked up')
+          await new Promise(r => setTimeout(r, 300))
+        } catch (digErr) {
+          console.log('[Wood] Could not dig crafting table:', digErr.message)
+        }
+      }
+    } catch (tableErr) {
+      console.log('[Wood] Crafting table pickup error:', tableErr.message)
+    }
+
     try {
       bot.chat(`✅ Houthakken klaar: ${collected} logs van ${treesChopped} bomen`)
     } catch (chatErr) {
       console.log('[Wood] Final chat error:', chatErr.message)
     }
 
-    // STEP 6: Plant saplings after all chopping is done
+    // STEP 8: Plant saplings after all chopping is done
     if (opts.replant) {
-      console.log('[Wood] STEP 6: Planting saplings...')
+      console.log('[Wood] STEP 8: Planting saplings...')
       try {
         await plantAllSaplings(bot, 25)
         console.log('[Wood] Sapling planting complete')

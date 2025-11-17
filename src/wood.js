@@ -244,6 +244,8 @@ async function craftSticks(bot, count = 4) {
  * @returns {Promise<number>} Number of blocks successfully harvested
  */
 async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
+  console.log('[Wood] harvestWood START - radius:', radius, 'maxBlocks:', maxBlocks)
+  
   const opts = {
     replant: options.replant !== false,
     craftPlanks: options.craftPlanks || false,
@@ -254,11 +256,14 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
   let treesChopped = 0
 
   try {
+    console.log('[Wood] Loading pathfinder...')
     const pathfinderPkg = require('mineflayer-pathfinder')
     const { Movements, goals } = pathfinderPkg
+    console.log('[Wood] Pathfinder loaded, entering main loop')
 
     // Continue until we reach maxBlocks or no more trees found
     while (collected < maxBlocks) {
+      console.log(`[Wood] Loop iteration - collected: ${collected}/${maxBlocks}`)
     // STEP 1: Plant saplings FIRST (simple version - no pathfinding to prevent crashes)
     if (opts.replant) {
       try {

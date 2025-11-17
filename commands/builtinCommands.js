@@ -190,12 +190,14 @@ module.exports = {
     }
     
     try {
-      bot.chat(`🌲 Ik ga hout hakken... (${n} logs, ${opts.replant ? 'met replant' : 'zonder replant'})`)
+      bot.chat(`🌲 Start houthakken... (${n} logs)`)
+      console.log('[Chop] Starting harvestWood with', n, 'logs')
       const got = await harvestWood(bot, 20, n, opts)
-      bot.chat(`✅ Klaar met hakken: ${got} logs verzameld`)
+      console.log('[Chop] harvestWood completed, got', got, 'logs')
+      bot.chat(`✅ Klaar: ${got} logs verzameld`)
     } catch (e) {
-      bot.chat(`❌ Hout hakken mislukt: ${e && e.message}`)
-      console.error('[Chop] Error:', e)
+      console.error('[Chop] Command error:', e)
+      bot.chat(`❌ Error: ${e.message}`)
     }
   },
 

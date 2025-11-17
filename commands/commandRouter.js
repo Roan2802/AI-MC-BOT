@@ -1,20 +1,10 @@
-import builtin from './builtinCommands.js'
-import { parseIntent } from '../nlp/intentParser.js'
-import { createDefaultEngine } from '../src/automation.js'
-import { startSafetyMonitor } from '../src/safetyMonitor.js'
-import { tryInitEnhanced, enableAutoEat } from '../src/combatEnhanced.js'
-
-/**
- * Command router with NLP support.
-const builtin = require('./builtinCommands.js')
-const { parseIntent } = require('../nlp/intentParser.js')
-const { createDefaultEngine } = require('../src/automation.js')
-const { startSafetyMonitor } = require('../src/safetyMonitor.js')
-const { tryInitEnhanced, enableAutoEat } = require('../src/combatEnhanced.js')
+const builtin = require('./builtinCommands.js');
+const { parseIntent } = require('../nlp/intentParser.js');
+const { createDefaultEngine } = require('../src/automation.js');
+const { startSafetyMonitor } = require('../src/safetyMonitor.js');
+const { tryInitEnhanced, enableAutoEat } = require('../src/combatEnhanced.js');
 
 function initCommandRouter(bot) {
- */
-export default function initCommandRouter(bot) {
   // Prevent multiple initializations (e.g., respawn triggers)
   if (bot._commandRouterInitialized) {
     if (bot._debug) console.log('[Router] already initialized, skipping')
@@ -42,10 +32,9 @@ export default function initCommandRouter(bot) {
 
     // Try to initialize optional enhanced combat features (plugins)
     try {
-      tryInitEnhanced(bot).then(() => {
-        // enable auto-eat if available
-        enableAutoEat(bot, { priority: 'saturation' })
-      }).catch(err => console.warn('[CombatEnhanced] init failed:', err && err.message))
+      tryInitEnhanced(bot)
+      // enable auto-eat if available
+      enableAutoEat(bot, { priority: 'saturation' })
     } catch (e) {
       console.warn('[CombatEnhanced] could not init:', e && e.message)
     }
@@ -167,10 +156,9 @@ export default function initCommandRouter(bot) {
       })
       processQueue()
     }
+  });
+
+  return { initCommandRouter };
 }
 
-module.exports = initCommandRouter
-  })
-
-  return { initCommandRouter }
-}
+module.exports = initCommandRouter;

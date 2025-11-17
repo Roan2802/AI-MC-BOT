@@ -3,7 +3,6 @@
 const pathfinderPkg = require('mineflayer-pathfinder')
 const { goals } = pathfinderPkg
 const { GoalFollow } = goals
-const { goals: { GoalFollow } } = require('mineflayer-pathfinder')
 
 /**
  * @typedef {Object} CombatConfig
@@ -170,7 +169,7 @@ function initCombatSystem(bot, config) {
     }
   }
 
-  bot.on('physicTick', () => {
+  bot.on('physicsTick', () => {
     if (!state.ownerName) return
     const owner = getOwnerEntity()
     if (!owner) {

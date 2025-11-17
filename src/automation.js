@@ -74,7 +74,7 @@ function getTimeOfDay(bot) {
 /**
  * Automation rules engine: evaluates conditions and suggests/triggers actions.
  */
-export class AutomationEngine {
+class AutomationEngine {
   constructor(bot) {
     this.bot = bot
     this.rules = []
@@ -189,7 +189,7 @@ function createDefaultEngine(bot) {
       return depleted
     },
     action: async (b) => {
-      const { harvestWood } = await import('./wood.js')
+      const { harvestWood } = require('./wood.js')
       b.chat('🌲 Logs uitgeput, begin houthakking...')
       await harvestWood(b, 30, 32)
     }
@@ -207,7 +207,7 @@ function createDefaultEngine(bot) {
       return coal && charcoal && planks && kelpBlock
     },
     action: async (b) => {
-      const { createCharcoal } = await import('./smelting.js')
+      const { createCharcoal } = require('./smelting.js')
       b.chat('🔥 Geen brandstof, maak charcoal...')
       await createCharcoal(b, 16, 20)
     }
@@ -222,7 +222,7 @@ function createDefaultEngine(bot) {
       return full
     },
     action: async (b) => {
-      const { returnHomeAndStore } = await import('./storage.js')
+      const { returnHomeAndStore } = require('./storage.js')
       b.chat('🏠 Inventory vol, ga naar huis en sla op...')
       await returnHomeAndStore(b)
     }
@@ -237,7 +237,7 @@ function createDefaultEngine(bot) {
       return !hasPickaxe(b)
     },
     action: async (b) => {
-      const { ensureStonePickaxe } = await import('./crafting.js')
+      const { ensureStonePickaxe } = require('./crafting.js')
       b.chat('⛏️ Geen pickaxe, maak gereedschap...')
       await ensureStonePickaxe(b)
     }
@@ -266,7 +266,7 @@ function createDefaultEngine(bot) {
       return depleted
     },
     action: async (b) => {
-      const { mineOres } = await import('./mining.js')
+      const { mineOres } = require('./mining.js')
       b.chat('⛏️ Geen ertsen in inventory, begin te minen...')
       await mineOres(b, 32, 20)
     }

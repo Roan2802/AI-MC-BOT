@@ -6,10 +6,9 @@
 let hasPvp = false
 let hasAutoEat = false
 
-async function tryInitEnhanced(bot) {
+function tryInitEnhanced(bot) {
   try {
-    const pvpMod = await import('mineflayer-pvp')
-    const pvpPlugin = pvpMod.plugin || pvpMod.default || pvpMod
+    const pvpPlugin = require('mineflayer-pvp').plugin
     bot.loadPlugin(pvpPlugin)
     hasPvp = true
     console.log('[CombatEnhanced] ✅ mineflayer-pvp loaded')
@@ -19,8 +18,7 @@ async function tryInitEnhanced(bot) {
   }
 
   try {
-    const ae = await import('mineflayer-auto-eat')
-    const autoEatPlugin = ae.plugin || ae.default || ae
+    const autoEatPlugin = require('mineflayer-auto-eat').plugin
     if (typeof autoEatPlugin === 'function') {
       bot.loadPlugin(autoEatPlugin)
       hasAutoEat = true
@@ -36,8 +34,8 @@ async function tryInitEnhanced(bot) {
 
   // Attempt to load minecraft-data for better mob names if available
   try {
-    const mcdata = await import('minecraft-data')
-    bot._mcData = mcdata.default(bot.version)
+    const mcdata = require('minecraft-data')
+    bot._mcData = mcdata(bot.version)
     console.log('[CombatEnhanced] ✅ minecraft-data loaded for version', bot.version)
   } catch (e) {
     console.log('[CombatEnhanced] ⚠️ minecraft-data not available:', e && e.message)

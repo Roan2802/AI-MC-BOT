@@ -5,9 +5,7 @@
  * Each command handles errors gracefully and provides user feedback via chat.
  */
 
-import { followPlayer, goToPlayer, stop as stopMovement, moveToPosition, stay } from '../src/movement.js'
-import { mineResource, mineOres } from '../src/mining.js'
-import { ensureWoodenPickaxe, hasPickaxe, ensureToolFor, ensureStonePickaxe, ensureIronPickaxe } from '../src/crafting.js'
+// ...existing code...
 const { followPlayer, goToPlayer, stop: stopMovement, moveToPosition, stay } = require('../src/movement.js')
 const { mineResource, mineOres } = require('../src/mining.js')
 const { ensureWoodenPickaxe, hasPickaxe, ensureToolFor, ensureStonePickaxe, ensureIronPickaxe } = require('../src/crafting.js')
@@ -28,7 +26,6 @@ function formatPos(p) {
   return `${Math.round(p.x)}, ${Math.round(p.y)}, ${Math.round(p.z)}`
 }
 
-export default {
 module.exports = {
   /**
    * status - Report current position and health.

@@ -172,20 +172,26 @@ async function ensureWoodenAxe(bot) {
   // Check if we already have an axe
   const existingAxe = getBestAxe(bot)
   if (existingAxe) {
+    bot.chat(`✅ Heb al ${existingAxe.name}`)
     await bot.equip(existingAxe, 'hand')
     return true
   }
+  
+  bot.chat('🔨 Geen axe, probeer te craften...')
   
   try {
     // Check if we can make stone axe (preferred)
     const hasCobble = bot.inventory.items().find(i => i.name === 'cobblestone')
     const targetAxe = hasCobble && hasCobble.count >= 3 ? 'stone_axe' : 'wooden_axe'
     
+    bot.chat(`🎯 Target: ${targetAxe} (cobble: ${hasCobble ? hasCobble.count : 0})`)
+    
     // Step 1: Ensure we have planks (craft from logs if needed)
     let hasPlanks = bot.inventory.items().find(i => i.name && i.name.includes('planks'))
     const hasLogs = bot.inventory.items().find(i => i.name && i.name.includes('log'))
     
     if (!hasPlanks && hasLogs) {
+      bot.chat(`📦 Craft planks van ${hasLogs.count} logs`)
       const logItem = hasLogs
       const plankType = logItem.name.replace('_log', '_planks')
       const plankRecipes = bot.recipesFor(bot.registry.itemsByName[plankType].id, null, 1, null)
@@ -194,11 +200,12 @@ async function ensureWoodenAxe(bot) {
         const craftCount = Math.min(2, logItem.count)
         await bot.craft(plankRecipes[0], craftCount)
         hasPlanks = bot.inventory.items().find(i => i.name && i.name.includes('planks'))
+        bot.chat(`✅ ${craftCount * 4} planks gecraft`)
       }
     }
     
     if (!hasPlanks && targetAxe === 'wooden_axe') {
-      console.log('[Crafting] No planks available to craft axe')
+      bot.chat('❌ Geen planks beschikbaar voor axe')
       return false
     }
     
@@ -206,15 +213,17 @@ async function ensureWoodenAxe(bot) {
     let hasSticks = bot.inventory.items().find(i => i.name === 'stick')
     
     if (!hasSticks && hasPlanks) {
+      bot.chat(`🪵 Craft sticks van ${hasPlanks.count} planks`)
       const stickRecipes = bot.recipesFor(bot.registry.itemsByName.stick.id, null, 1, null)
       if (stickRecipes && stickRecipes.length > 0) {
         await bot.craft(stickRecipes[0], 1)
         hasSticks = bot.inventory.items().find(i => i.name === 'stick')
+        bot.chat(`✅ 4 sticks gecraft`)
       }
     }
     
     if (!hasSticks) {
-      console.log('[Crafting] No sticks available to craft axe')
+      bot.chat('❌ Geen sticks beschikbaar voor axe')
       return false
     }
     
@@ -222,12 +231,24 @@ async function ensureWoodenAxe(bot) {
     let hasCraftingTable = bot.inventory.items().find(i => i.name === 'crafting_table')
     let tablePlacedByUs = false
     
-    if (!hasCraftingTable && hasPlanks && hasPlanks.count >= 4) {
-      const tableRecipes = bot.recipesFor(bot.registry.itemsByName.crafting_table.id, null, 1, null)
-      if (tableRecipes && tableRecipes.length > 0) {
-        await bot.craft(tableRecipes[0], 1)
-        hasCraftingTable = bot.inventory.items().find(i => i.name === 'crafting_table')
+    if (!hasCraftingTable) {
+      bot.chat(`📋 Geen crafting table, probeer te maken (planks: ${hasPlanks ? hasPlanks.count : 0})`)
+      
+      if (hasPlanks && hasPlanks.count >= 4) {
+        const tableRecipes = bot.recipesFor(bot.registry.itemsByName.crafting_table.id, null, 1, null)
+        if (tableRecipes && tableRecipes.length > 0) {
+          await bot.craft(tableRecipes[0], 1)
+          hasCraftingTable = bot.inventory.items().find(i => i.name === 'crafting_table')
+          if (hasCraftingTable) {
+            bot.chat('✅ Crafting table gecraft')
+          }
+        }
+      } else {
+        bot.chat(`❌ Niet genoeg planks voor crafting table (nodig: 4, heb: ${hasPlanks ? hasPlanks.count : 0})`)
+        return false
       }
+    } else {
+      bot.chat('✅ Heb al crafting table in inventory')
     }
     
     // Step 4: Place crafting table
@@ -240,40 +261,49 @@ async function ensureWoodenAxe(bot) {
       })
       
       if (nearbyTable) {
+        bot.chat('✅ Crafting table gevonden in de buurt')
         tableBlock = nearbyTable
       } else {
         // Place crafting table
+        bot.chat('🔨 Plaats crafting table...')
         const placed = await placeCraftingTable(bot)
         if (placed) {
           tablePlacedByUs = true
+          bot.chat('✅ Crafting table geplaatst')
           await new Promise(r => setTimeout(r, 300))
           tableBlock = bot.findBlock({
             matching: b => b && b.name === 'crafting_table',
             maxDistance: 4
           })
+        } else {
+          bot.chat('❌ Kon crafting table niet plaatsen')
         }
       }
     }
     
     if (!tableBlock) {
-      console.log('[Crafting] No crafting table available')
+      bot.chat('❌ Geen crafting table beschikbaar om te gebruiken')
       return false
     }
     
     // Step 5: Craft axe (stone if possible, else wooden)
+    bot.chat(`🪓 Craft ${targetAxe}...`)
     const axeRecipes = bot.recipesFor(bot.registry.itemsByName[targetAxe].id, null, 1, tableBlock)
     if (axeRecipes && axeRecipes.length > 0) {
       await bot.craft(axeRecipes[0], 1, tableBlock)
-      bot.chat(`🪓 ${targetAxe.replace('_', ' ')} gecraft!`)
+      bot.chat(`✅ ${targetAxe.replace('_', ' ')} gecraft!`)
+    } else {
+      bot.chat(`❌ Geen recipe voor ${targetAxe}`)
     }
     
     // Step 6: Mine crafting table if we placed it
     if (tablePlacedByUs && tableBlock) {
       try {
+        bot.chat('⛏️ Pak crafting table op')
         await bot.dig(tableBlock)
         await new Promise(r => setTimeout(r, 300))
       } catch (e) {
-        console.log('[Crafting] Failed to pick up table:', e.message)
+        bot.chat(`⚠️ Kon table niet oppakken: ${e.message}`)
       }
     }
     
@@ -281,10 +311,13 @@ async function ensureWoodenAxe(bot) {
     const newAxe = getBestAxe(bot)
     if (newAxe) {
       await bot.equip(newAxe, 'hand')
+      return true
+    } else {
+      bot.chat('❌ Geen axe na crafting proces')
+      return false
     }
-    
-    return hasAxe(bot)
   } catch (e) {
+    bot.chat(`❌ ensureWoodenAxe error: ${e.message}`)
     console.warn('[Crafting] ensureWoodenAxe failed', e && e.message)
     return hasAxe(bot)
   }

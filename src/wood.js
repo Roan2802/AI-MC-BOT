@@ -244,18 +244,6 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
     craftSticks: options.craftSticks || false
   }
 
-  // Import ensureToolFor here to avoid circular dependency
-  const { ensureToolFor } = require('./crafting.js')
-  
-  // Ensure we have an axe (stone preferred if cobblestone available)
-  await ensureToolFor(bot, 'wood')
-  
-  // Equip best axe
-  const bestAxe = getBestAxe(bot)
-  if (bestAxe) {
-    await bot.equip(bestAxe, 'hand')
-  }
-
   let collected = 0
   let treesChopped = 0
 
@@ -264,9 +252,24 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
 
   // Continue until we reach maxBlocks or no more trees found
   while (collected < maxBlocks) {
+    // STEP 1: Check if we have an axe, craft one if needed
+    const { ensureToolFor } = require('./crafting.js')
+    const hasAxeNow = await ensureToolFor(bot, 'wood')
+    
+    if (!hasAxeNow) {
+      bot.chat('❌ Kan geen axe maken, geen materialen')
+      break
+    }
+    
+    // Equip best axe
+    const bestAxe = getBestAxe(bot)
+    if (bestAxe) {
+      await bot.equip(bestAxe, 'hand')
+    }
+    
     const origin = bot.entity.position
     
-    // Find nearest log block
+    // STEP 2: Find nearest log block
     const logBlock = bot.findBlock({
       matching: b => b && b.name && b.name.includes('log'),
       maxDistance: radius,
@@ -286,12 +289,12 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
     const cluster = findConnectedLogs(bot, logBlock, radius)
     if (!cluster || cluster.length === 0) break
 
-    bot.chat(`🌲 Boom gevonden: ${cluster.length} logs (${treeType})`)
+    bot.chat(`🌲 Boom hakken: ${cluster.length} logs (${treeType})`)
 
     // Sort by y descending (top to bottom) to prevent floating logs
     cluster.sort((a, b) => b.position.y - a.position.y)
 
-    // Mine all logs in tree
+    // STEP 3: Mine all logs in this tree
     for (const block of cluster) {
       if (collected >= maxBlocks) break
       
@@ -325,11 +328,8 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
         await bot.dig(block, true)
         collected++
         
-        // Wait for items to spawn
-        await new Promise(r => setTimeout(r, 500))
-        
-        // Collect nearby items
-        await collectNearbyItems(bot, 12)
+        // Small delay for drops to spawn
+        await new Promise(r => setTimeout(r, 300))
         
       } catch (e) {
         if (bot._debug) console.log('[Wood] Dig failed:', e.message)
@@ -337,30 +337,43 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
     }
 
     treesChopped++
+    bot.chat(`✅ Boom ${treesChopped} gehakt`)
 
-    // Collect any remaining items from this tree
-    await new Promise(r => setTimeout(r, 800))
+    // STEP 4: Collect all items from this tree
+    await new Promise(r => setTimeout(r, 1000)) // Wait for all drops
     await collectNearbyItems(bot, 15)
+    bot.chat(`📦 Items verzameld`)
 
-    // Replant sapling if enabled
+    // STEP 5: Replant sapling if we have one
     if (opts.replant) {
-      const saplingPos = findSaplingPosition(bot, basePos, 3)
-      if (saplingPos) {
-        // Navigate close to sapling position
-        try {
-          const movements = new Movements(bot)
-          bot.pathfinder.setMovements(movements)
-          const goal = new goals.GoalNear(saplingPos.x, saplingPos.y, saplingPos.z, 2)
-          await bot.pathfinder.goto(goal)
-          await replantSapling(bot, saplingPos, treeType)
-        } catch (e) {
-          if (bot._debug) console.log('[Wood] Could not reach sapling position')
+      const saplingName = `${treeType}_sapling`
+      const hasSapling = bot.inventory.items().find(i => i.name === saplingName)
+      
+      if (hasSapling) {
+        const saplingPos = findSaplingPosition(bot, basePos, 3)
+        if (saplingPos) {
+          try {
+            const movements = new Movements(bot)
+            bot.pathfinder.setMovements(movements)
+            const goal = new goals.GoalNear(saplingPos.x, saplingPos.y, saplingPos.z, 2)
+            await bot.pathfinder.goto(goal)
+            const planted = await replantSapling(bot, saplingPos, treeType)
+            if (!planted) {
+              bot.chat(`⚠️ Kon sapling niet planten op ${Math.floor(saplingPos.x)}, ${Math.floor(saplingPos.z)}`)
+            }
+          } catch (e) {
+            if (bot._debug) console.log('[Wood] Could not reach sapling position')
+          }
+        } else {
+          bot.chat(`⚠️ Geen geschikte plek voor sapling (4-block spacing)`)
         }
+      } else {
+        bot.chat(`⚠️ Geen ${saplingName} om te planten`)
       }
     }
 
-    // Small break between trees
-    await new Promise(r => setTimeout(r, 400))
+    // Small break before next tree
+    await new Promise(r => setTimeout(r, 500))
   }
 
   // Final item collection sweep

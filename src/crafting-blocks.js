@@ -18,18 +18,30 @@ async function placeCraftingTable(bot) {
       return false
     }
     
-    // Find ground block to place on
-    const groundBlock = bot.blockAt(bot.entity.position.offset(1, -1, 0))
-    if (!groundBlock || groundBlock.name === 'air') {
-      console.log('[Crafting] No suitable ground to place crafting table')
-      return false
+    // Try to find suitable ground around bot in a radius
+    for (let dx = -2; dx <= 2; dx++) {
+      for (let dz = -2; dz <= 2; dz++) {
+        const checkPos = bot.entity.position.offset(dx, 0, dz)
+        const groundBlock = bot.blockAt(checkPos.offset(0, -1, 0))
+        const topBlock = bot.blockAt(checkPos)
+        
+        // Check if ground exists and top is air
+        if (groundBlock && groundBlock.name !== 'air' && topBlock && topBlock.name === 'air') {
+          try {
+            await bot.equip(craftingTable, 'hand')
+            await bot.placeBlock(groundBlock, { x: 0, y: 1, z: 0 })
+            console.log('[Crafting] Crafting table placed at', Math.floor(checkPos.x), Math.floor(checkPos.z))
+            await new Promise(r => setTimeout(r, 300))
+            return true
+          } catch (e) {
+            // Try next position
+          }
+        }
+      }
     }
     
-    await bot.equip(craftingTable, 'hand')
-    await bot.placeBlock(groundBlock, { x: 0, y: 1, z: 0 })
-    console.log('[Crafting] Crafting table placed')
-    await new Promise(r => setTimeout(r, 300))
-    return true
+    console.log('[Crafting] No suitable ground to place crafting table nearby')
+    return false
   } catch (e) {
     console.error('[Crafting] Place crafting table failed:', e.message)
     return false

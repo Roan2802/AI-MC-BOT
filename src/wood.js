@@ -265,39 +265,8 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
     while (collected < maxBlocks) {
       console.log(`[Wood] Loop iteration - collected: ${collected}/${maxBlocks}`)
       
-      // STEP 1: Plant saplings FIRST (simple version - no pathfinding to prevent crashes)
-      if (opts.replant) {
-        try {
-          const allSaplings = bot.inventory.items().filter(i => i.name && i.name.includes('sapling'))
-          if (allSaplings.length > 0) {
-            const totalSaplings = allSaplings.reduce((sum, s) => sum + s.count, 0)
-            bot.chat(`🌱 ${totalSaplings} saplings in inventory`)
-            
-            // Plant up to 3 saplings nearby without complex pathfinding
-            let planted = 0
-            for (const saplingItem of allSaplings) {
-              if (planted >= 3) break
-              if (!saplingItem || !saplingItem.name) continue
-              
-              const treeType = saplingItem.name.replace('_sapling', '')
-              const currentPos = bot.entity.position.clone()
-              const saplingPos = findSaplingPosition(bot, currentPos, 5)
-              
-              if (saplingPos && saplingPos.distanceTo(currentPos) < 3) {
-                try {
-                  await replantSapling(bot, saplingPos, treeType)
-                  planted++
-                  await new Promise(r => setTimeout(r, 300))
-                } catch (e) {
-                  if (bot._debug) console.log('[Wood] Sapling plant failed:', e.message)
-                }
-              }
-            }
-          }
-        } catch (e) {
-          console.log('[Wood] Sapling phase error:', e.message)
-        }
-      }
+      // STEP 1: Sapling planting disabled temporarily for debugging
+      // TODO: Re-enable after fixing crash
       
       console.log('[Wood] STEP 2: Check axe')
       

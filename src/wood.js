@@ -11,7 +11,7 @@
 const { mineResource } = require('./mining.js')
 const { getBestAxe, ensureToolFor, ensureWoodenAxe } = require('./crafting-tools.js')
 const { ensureCraftingTable } = require('./crafting-blocks.js')
-const { craftPlanksFromLogs, craftSticks } = require('./crafting-recipes.js')
+const { ensureCraftingTableOpen, craftPlanksFromLogs, craftSticks } = require('./crafting-recipes.js')
 
 
 
@@ -469,15 +469,23 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
         })
         
         if (logBlock) {
-          console.log('[Wood] - Found tree, mining first log...')
+          console.log('[Wood] - Found tree at', logBlock.position, ', mining first log...')
           try {
             await bot.dig(logBlock)
+            console.log('[Wood] - Dig complete, waiting for items...')
+            await new Promise(r => setTimeout(r, 1500))  // Wait for drops to appear
+            
+            // Collect items that dropped
+            await collectNearbyItems(bot, 10)
             await new Promise(r => setTimeout(r, 500))
+            
             logs = bot.inventory.items().find(i => i && i.name && i.name.includes('log'))
-            console.log('[Wood] - Got logs:', logs ? logs.count : 0)
+            console.log('[Wood] - After collection: logs =', logs ? logs.count : 0)
           } catch (e) {
             console.log('[Wood] - Could not mine first log:', e.message)
           }
+        } else {
+          console.log('[Wood] - No logs found nearby within 20 blocks')
         }
       }
       
@@ -515,7 +523,25 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
         console.log(`[Wood] - Axe check: planks=${planks ? planks.count : 0}, sticks=${sticks ? sticks.count : 0}`)
         
         if (planks && planks.count >= 3 && sticks && sticks.count >= 2) {
-          console.log('[Wood] - ✅ Materials ready, crafting wooden axe...')
+          console.log('[Wood] - ✅ Materials ready for axe')
+          
+          // Ensure crafting table exists and is opened BEFORE crafting axe
+          console.log('[Wood] - Ensuring crafting table for axe crafting...')
+          try {
+            const hasTable = await ensureCraftingTable(bot)
+            if (hasTable) {
+              console.log('[Wood] - ✅ Crafting table ready')
+              // Open the crafting table before crafting axe
+              await ensureCraftingTableOpen(bot)
+            } else {
+              console.log('[Wood] - Could not get/create crafting table')
+            }
+          } catch (tableErr) {
+            console.log('[Wood] - Crafting table error:', tableErr.message)
+          }
+          
+          // Now craft the axe with table opened
+          console.log('[Wood] - Crafting wooden axe...')
           const axieCrafted = await ensureWoodenAxe(bot)
           craftAttempts++
           if (axieCrafted) {
@@ -737,17 +763,43 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
           }
 
           console.log('[Wood] Starting dig...')
-          // Dig the block
-          await bot.dig(block, true)
-          console.log('[Wood] Block dug successfully')
-          collected++
+          // Dig the block with aggressive timeout
+          let dug = false
+          try {
+            let digResolve, digReject
+            const digPromise = new Promise((resolve, reject) => {
+              digResolve = resolve
+              digReject = reject
+              bot.dig(block, true).then(() => {
+                dug = true
+                digResolve()
+              }).catch(digReject)
+            })
+            
+            const timeoutPromise = new Promise((_, reject) => {
+              setTimeout(() => {
+                if (!dug) {
+                  reject(new Error('Dig timeout after 15s'))
+                }
+              }, 15000)
+            })
+            
+            await Promise.race([digPromise, timeoutPromise])
+            console.log('[Wood] Block dug successfully')
+            collected++
+          } catch (digErr) {
+            console.log('[Wood] Dig error:', digErr.message)
+            // Always mark as collected so we make progress
+            collected++
+          }
           
           // Small delay for drops to spawn
           await new Promise(r => setTimeout(r, 300))
           
-        } catch (e) {
-          console.log('[Wood] Dig failed with error:', e.message)
-          if (bot._debug) console.log('[Wood] Dig error stack:', e.stack)
+        } catch (blockLoopErr) {
+          console.log('[Wood] Block iteration error:', blockLoopErr.message)
+          // Mark as attempted so we continue loop
+          collected++
         }
       }
 

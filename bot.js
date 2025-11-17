@@ -3,6 +3,22 @@ const initCommandRouter = require('./commands/commandRouter.js');
 const { setupPathfinder } = require('./src/movement.js');
 const { initCombatSystem } = require('./src/combat.js');
 
+// Global error handlers
+process.on('uncaughtException', (err) => {
+  console.error('[UNCAUGHT] Uncaught exception:', err.message);
+  console.error('[UNCAUGHT] Stack:', err.stack);
+  // Don't exit - let bot continue
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[REJECTION] Unhandled rejection at promise:', promise);
+  console.error('[REJECTION] Reason:', reason);
+  if (reason && reason.message) {
+    console.error('[REJECTION] Message:', reason.message);
+  }
+  // Don't exit - let bot continue
+});
+
 console.log('[Agent01] Starting bot...');
 console.log('[Agent01] Attempting to connect to localhost:25565');
 

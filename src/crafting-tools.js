@@ -83,17 +83,77 @@ async function tryCraft(bot, itemName, amount = 1, fallbackNames = []) {
     }
     
     if (!item) {
+      // Last resort: search for any item containing the base name
+      const baseSearch = itemName.split('_')[0]  // e.g. "wooden" from "wooden_axe"
+      console.log(`[Crafting] ${itemName} not found, searching for items with '${baseSearch}'...`)
+      
+      for (const [regName, regItem] of Object.entries(bot.registry.itemsByName)) {
+        if (regName.includes(baseSearch) && regName.includes('axe')) {
+          console.log(`[Crafting] Found match: ${regName}`)
+          item = regItem
+          actualName = regName
+          break
+        }
+      }
+    }
+    
+    if (!item) {
       console.log(`[Crafting] Item ${itemName} not in registry (tried: ${fallbackNames.join(', ')})`)
       return false
     }
     
-    const recipes = bot.recipesFor(item.id, null, 1, null)
-    if (!recipes || recipes.length === 0) {
-      console.log(`[Crafting] No recipe for ${actualName}`)
-      return false
+    // Try with opened window first (for crafting table recipes)
+    let recipes = []
+    
+    // If any crafting window is open, get recipes from current window
+    if (bot.currentWindow) {
+      console.log(`[Crafting] Window open (${bot.currentWindow.type}), searching recipes in window...`)
+      try {
+        recipes = bot.recipesFor(item.id, null, 1, bot.currentWindow)
+      } catch (e) {
+        console.log(`[Crafting] Error searching window recipes:`, e.message)
+        recipes = []
+      }
     }
     
-    await bot.craft(recipes[0], amount)
+    // If no recipes found in window, try inventory recipes
+    if (!recipes || recipes.length === 0) {
+      console.log(`[Crafting] No window recipes, trying inventory recipes...`)
+      recipes = bot.recipesFor(item.id, null, 1, null)
+    }
+    
+    if (!recipes || recipes.length === 0) {
+      // Last resort: search all recipes in registry for this item
+      console.log(`[Crafting] No inventory recipes either, searching all recipes...`)
+      const allRecipes = bot.recipesFor(item.id)
+      if (allRecipes && allRecipes.length > 0) {
+        console.log(`[Crafting] Found ${allRecipes.length} recipe(s) in all recipes`)
+        recipes = allRecipes
+      } else {
+        console.log(`[Crafting] No recipe for ${actualName}`)
+        return false
+      }
+    }
+    
+    // If recipe requires table, we need to pass it to bot.craft
+    if (recipes[0] && recipes[0].requiresTable) {
+      console.log(`[Crafting] Recipe requires crafting table, finding one...`)
+      const craftingTable = bot.findBlock({
+        matching: b => b && b.name === 'crafting_table',
+        maxDistance: 5,
+        count: 1
+      })
+      
+      if (!craftingTable) {
+        console.log(`[Crafting] No crafting table found for recipe`)
+        return false
+      }
+      
+      await bot.craft(recipes[0], amount, craftingTable)
+    } else {
+      await bot.craft(recipes[0], amount)
+    }
+    
     console.log(`[Crafting] Crafted ${amount}x ${actualName}`)
     return true
   } catch (e) {

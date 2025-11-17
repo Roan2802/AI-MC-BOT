@@ -18,23 +18,38 @@ async function placeCraftingTable(bot) {
       return false
     }
     
+    console.log('[Crafting] Placing crafting table...')
+    
     // Try to find suitable ground around bot in a radius
-    for (let dx = -2; dx <= 2; dx++) {
-      for (let dz = -2; dz <= 2; dz++) {
-        const checkPos = bot.entity.position.offset(dx, 0, dz)
-        const groundBlock = bot.blockAt(checkPos.offset(0, -1, 0))
-        const topBlock = bot.blockAt(checkPos)
-        
-        // Check if ground exists and top is air
-        if (groundBlock && groundBlock.name !== 'air' && topBlock && topBlock.name === 'air') {
-          try {
-            await bot.equip(craftingTable, 'hand')
-            await bot.placeBlock(groundBlock, { x: 0, y: 1, z: 0 })
-            console.log('[Crafting] Crafting table placed at', Math.floor(checkPos.x), Math.floor(checkPos.z))
-            await new Promise(r => setTimeout(r, 300))
-            return true
-          } catch (e) {
-            // Try next position
+    const botPos = bot.entity.position
+    
+    // First try: directly below us if there's ground
+    for (let dy = 0; dy >= -2; dy--) {
+      for (let dx = -3; dx <= 3; dx++) {
+        for (let dz = -3; dz <= 3; dz++) {
+          if (dx === 0 && dy === 0 && dz === 0) continue  // Skip our own position
+          
+          const checkPos = botPos.offset(dx, dy, dz)
+          const groundBlock = bot.blockAt(checkPos.offset(0, -1, 0))
+          const topBlock = bot.blockAt(checkPos)
+          
+          // Check if ground exists and is solid, and top is air
+          if (groundBlock && !groundBlock.name.includes('air') && topBlock && topBlock.name === 'air') {
+            try {
+              console.log(`[Crafting] Attempting to place at ${Math.floor(checkPos.x)}, ${Math.floor(checkPos.y)}, ${Math.floor(checkPos.z)}`)
+              await bot.equip(craftingTable, 'hand')
+              await new Promise(r => setTimeout(r, 100))
+              
+              // Place the block
+              await bot.placeBlock(groundBlock, { x: 0, y: 1, z: 0 })
+              console.log('[Crafting] Crafting table placed successfully')
+              await new Promise(r => setTimeout(r, 300))
+              return true
+            } catch (e) {
+              console.log(`[Crafting] Placement failed at ${Math.floor(checkPos.x)}, ${Math.floor(checkPos.y)}, ${Math.floor(checkPos.z)}: ${e.message}`)
+              // Try next position
+              continue
+            }
           }
         }
       }

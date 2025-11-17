@@ -4,6 +4,33 @@
  */
 
 /**
+ * Open crafting table for recipes that need it
+ */
+async function ensureCraftingTableOpen(bot) {
+  try {
+    // Find and open the crafting table
+    const craftingTable = bot.findBlock({
+      matching: b => b && b.name === 'crafting_table',
+      maxDistance: 5,
+      count: 1
+    })
+    
+    if (craftingTable) {
+      console.log('[Crafting] Found crafting table, opening...')
+      await bot.openBlock(craftingTable)
+      console.log('[Crafting] Crafting table opened')
+      return true
+    }
+    
+    console.log('[Crafting] No crafting table found to open')
+    return false
+  } catch (e) {
+    console.log('[Crafting] Could not open crafting table:', e.message)
+    return false
+  }
+}
+
+/**
  * Craft planks from logs
  */
 async function craftPlanksFromLogs(bot, logsToUse = 1) {
@@ -154,6 +181,7 @@ async function craftCharcoal(bot, count = 1) {
 }
 
 module.exports = {
+  ensureCraftingTableOpen,
   craftPlanksFromLogs,
   craftSticks,
   ensureFuel,

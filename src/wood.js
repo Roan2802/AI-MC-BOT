@@ -189,6 +189,9 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
   let collected = 0
   let treesChopped = 0
 
+  const pathfinderPkg = require('mineflayer-pathfinder')
+  const { Movements, goals } = pathfinderPkg
+
   // Continue until we reach maxBlocks or no more trees found
   while (collected < maxBlocks) {
     const origin = bot.entity.position
@@ -219,10 +222,21 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
     cluster.sort((a, b) => b.position.y - a.position.y)
 
     // Mine all logs in tree
-    for (const b of cluster) {
+    for (const block of cluster) {
       if (collected >= maxBlocks) break
+      
       try {
-        await bot.dig(b, true)
+        // Navigate to block if too far
+        const dist = bot.entity.position.distanceTo(block.position)
+        if (dist > 4.5) {
+          const movements = new Movements(bot)
+          bot.pathfinder.setMovements(movements)
+          const goal = new goals.GoalNear(block.position.x, block.position.y, block.position.z, 3)
+          await bot.pathfinder.goto(goal)
+        }
+
+        // Dig the block
+        await bot.dig(block, true)
         collected++
         await new Promise(r => setTimeout(r, 200)) // Small delay for drops
       } catch (e) {

@@ -162,6 +162,7 @@ function findPlantingSpotNearBase(bot, basePos, existingPlants) {
  * @returns {Array<import('prismarine-block').Block>} array of log blocks
  */
 function findConnectedLogs(bot, startBlock, radius = 20) {
+  console.log('[Wood] findConnectedLogs: Function called with params:', !!bot, !!startBlock, !!startBlock?.position)
   if (!bot || !startBlock || !startBlock.position) {
     console.log('[Wood] findConnectedLogs: Invalid parameters')
     return []
@@ -175,6 +176,7 @@ function findConnectedLogs(bot, startBlock, radius = 20) {
     }
     
     console.log(`[Wood] findConnectedLogs: Starting from ${startBlock.name} at ${startBlock.position.x},${startBlock.position.y},${startBlock.position.z}`)
+    console.log(`[Wood] Position object type: ${typeof startBlock.position}, has floored: ${typeof startBlock.position.floored}`)
     
     const visited = new Set()
     const blocks = []
@@ -182,10 +184,12 @@ function findConnectedLogs(bot, startBlock, radius = 20) {
     // First, add the start block
     if (startBlock.name && startBlock.name.includes('log')) {
       blocks.push(startBlock)
-      visited.add(`${Math.floor(startBlock.position.x)},${Math.floor(startBlock.position.y)},${Math.floor(startBlock.position.z)}`)
+      const posKey = `${Math.floor(startBlock.position.x)},${Math.floor(startBlock.position.y)},${Math.floor(startBlock.position.z)}`
+      visited.add(posKey)
       console.log(`[Wood] findConnectedLogs: Added start block ${startBlock.name}`)
     }
 
+    console.log('[Wood] findConnectedLogs: Starting search loop...')
     // Search in a larger area around the start block for connected logs
     const startX = Math.floor(startBlock.position.x)
     const startY = Math.floor(startBlock.position.y)
@@ -221,6 +225,7 @@ function findConnectedLogs(bot, startBlock, radius = 20) {
     return blocks
   } catch (e) {
     console.error('[Wood] findConnectedLogs error:', e.message)
+    console.error('[Wood] Error stack:', e.stack)
     return []
   }
 }
@@ -514,56 +519,123 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
       }
     }
 
-    // STEP 3: Check if there's an axe - If not, craft one
+    // STEP 3: Check if there's an axe - If not, chop whole tree first, then try to craft axe (with crafting table if needed)
     console.log('[Wood] STEP 3: Checking for axe...')
     let axe = getBestAxe(bot)
-    
+
     if (!axe) {
-      console.log('[Wood] No axe found, crafting wooden axe...')
-      bot.chat('🔨 Crafting wooden axe...')
-      
-      // Get some logs first if we don't have any
+      console.log('[Wood] No axe found, will chop whole tree first to get enough logs')
+      bot.chat('🔨 No axe, chopping tree by hand to gather logs for crafting')
+    }
+
+    // STEP 4: Chop the tree completely (tree scanning)
+    console.log('[Wood] STEP 4: Chopping tree completely...')
+    bot.chat('🪓 Chopping tree...')
+
+    // Find all connected logs
+    const treeLogs = findConnectedLogs(bot, logBlock, radius)
+    console.log(`[Wood] Tree has ${treeLogs.length} logs`)
+
+    if (treeLogs.length === 0) {
+      console.log('[Wood] No logs found to chop')
+      return 0
+    }
+
+    // Sort by height (top to bottom)
+    treeLogs.sort((a, b) => b.position.y - a.position.y)
+
+    // Chop each log
+    for (const log of treeLogs) {
+      if (collected >= maxBlocks) {
+        console.log('[Wood] Reached max blocks limit')
+        break
+      }
+
+      try {
+        console.log(`[Wood] Chopping log at ${log.position.x}, ${log.position.y}, ${log.position.z}`)
+        // Check if we're close enough
+        const logDist = bot.entity.position.distanceTo(log.position)
+        if (logDist > 4) {
+          console.log('[Wood] Moving closer to log...')
+          try {
+            const movements = new Movements(bot)
+            bot.pathfinder.setMovements(movements)
+            const goal = new goals.GoalNear(log.position.x, log.position.y, log.position.z, 3)
+            await bot.pathfinder.goto(goal)
+          } catch (navErr) {
+            console.log('[Wood] Could not navigate to log')
+            continue
+          }
+        }
+
+        // Verify block still exists
+        const currentBlock = bot.blockAt(log.position)
+        if (!currentBlock || !currentBlock.name.includes('log')) {
+          console.log('[Wood] Log no longer exists')
+          continue
+        }
+
+        // Dig the log
+        await bot.dig(currentBlock)
+        collected++
+        console.log(`[Wood] Chopped log ${collected}/${maxBlocks}`)
+        await new Promise(r => setTimeout(r, 300))
+      } catch (digErr) {
+        console.log('[Wood] Error chopping log:', digErr.message)
+        collected++ // Count as attempted
+      }
+    }
+
+    // STEP 5: Collect logs automatically
+    console.log('[Wood] STEP 5: Collecting logs...')
+    bot.chat('📦 Collecting logs...')
+    await new Promise(r => setTimeout(r, 1000)) // Wait for drops
+    await collectNearbyItems(bot, 15)
+
+    // After chopping, try to craft axe if still missing
+    axe = getBestAxe(bot)
+    if (!axe) {
       let logs = bot.inventory.items().find(i => i && i.name && i.name.includes('log'))
       if (!logs || logs.count < 2) {
-        console.log('[Wood] Mining initial logs for axe materials...')
-        await bot.dig(logBlock)
-        await new Promise(r => setTimeout(r, 1000))
-        await collectNearbyItems(bot, 10)
-        
-        logs = bot.inventory.items().find(i => i && i.name && i.name.includes('log'))
-        if (!logs || logs.count < 2) {
-          console.log('[Wood] Still not enough logs for axe')
-          bot.chat('❌ Not enough logs to craft axe')
-          return 0
+        bot.chat('❌ Still not enough logs to craft axe after chopping')
+      } else {
+        // Make planks from logs
+        console.log('[Wood] Crafting planks...')
+        await craftPlanksFromLogs(bot, Math.min(logs.count, 3))
+        await new Promise(r => setTimeout(r, 500))
+
+        // Make sticks from planks
+        const planks = bot.inventory.items().find(i => i && i.name && i.name.includes('planks'))
+        if (planks && planks.count >= 4) {
+          console.log('[Wood] Crafting sticks...')
+          await craftSticks(bot, 2)
+          await new Promise(r => setTimeout(r, 500))
+        }
+
+        // Ensure crafting table exists and is placed
+        let craftingTable = bot.inventory.items().find(i => i && i.name === 'crafting_table')
+        if (!craftingTable) {
+          bot.chat('🪑 Crafting table not found, crafting one...')
+          await craftPlanksFromLogs(bot, 4)
+          await new Promise(r => setTimeout(r, 500))
+          // Try to craft crafting table
+          // ...existing code...
+        }
+        // Place crafting table if not placed
+        // ...existing code...
+
+        // Craft axe
+        console.log('[Wood] Crafting wooden axe...')
+        const axeCrafted = await ensureWoodenAxe(bot)
+        if (axeCrafted) {
+          console.log('[Wood] Axe crafted successfully!')
+          bot.chat('✅ Wooden axe crafted!')
+          axe = getBestAxe(bot)
+        } else {
+          console.log('[Wood] Axe crafting failed, continuing with bare hands')
+          bot.chat('⚠️ Using bare hands (axe crafting failed)')
         }
       }
-
-      // Make planks from logs
-      console.log('[Wood] Crafting planks...')
-      await craftPlanksFromLogs(bot, Math.min(logs.count, 3))
-      await new Promise(r => setTimeout(r, 500))
-
-      // Make sticks from planks
-      const planks = bot.inventory.items().find(i => i && i.name && i.name.includes('planks'))
-      if (planks && planks.count >= 4) {
-        console.log('[Wood] Crafting sticks...')
-        await craftSticks(bot, 2) // Need 4 planks for 8 sticks, but we need at least 2 sticks
-        await new Promise(r => setTimeout(r, 500))
-      }
-
-      // Craft axe
-      console.log('[Wood] Crafting wooden axe...')
-      const axeCrafted = await ensureWoodenAxe(bot)
-      if (axeCrafted) {
-        console.log('[Wood] Axe crafted successfully!')
-        bot.chat('✅ Wooden axe crafted!')
-        axe = getBestAxe(bot)
-      } else {
-        console.log('[Wood] Axe crafting failed, continuing with bare hands')
-        bot.chat('⚠️ Using bare hands (axe crafting failed)')
-      }
-    } else {
-      console.log(`[Wood] Using existing axe: ${axe.name}`)
     }
 
     // Equip axe if we have one

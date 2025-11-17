@@ -14,7 +14,8 @@ Write-Host ""
 try {
     $javaVersion = java -version 2>&1 | Select-String "version"
     Write-Host "✓ Java found: $javaVersion" -ForegroundColor Green
-} catch {
+}
+catch {
     Write-Host "✗ Java not found! Please install Java 17 or higher." -ForegroundColor Red
     Write-Host "  Download from: https://adoptium.net/" -ForegroundColor Yellow
     exit 1

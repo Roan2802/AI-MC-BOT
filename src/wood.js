@@ -300,19 +300,27 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
       console.log('[Wood] Skipping auto-craft (temporarily disabled for debugging)')
     }
     
+    console.log('[Wood] STEP 3: Equip best tool')
     // Equip best axe if we have one
     const bestAxe = getBestAxe(bot)
+    console.log('[Wood] Best axe found:', bestAxe ? bestAxe.name : 'null')
     if (bestAxe) {
+      console.log('[Wood] Equipping axe...')
       await bot.equip(bestAxe, 'hand')
+      console.log('[Wood] Axe equipped')
     } else {
+      console.log('[Wood] No axe, unequipping hand...')
       // Unequip to use bare hands
       try {
         await bot.unequip('hand')
+        console.log('[Wood] Hand unequipped')
       } catch (e) {
+        console.log('[Wood] Already bare hands')
         // Already bare hands
       }
     }
     
+    console.log('[Wood] STEP 4: Find tree')
     const origin = bot.entity.position
     
     // STEP 3: Find nearest log block

@@ -262,28 +262,39 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
     if (opts.replant) {
       const allSaplings = bot.inventory.items().filter(i => i.name && i.name.includes('sapling'))
       if (allSaplings.length > 0) {
-        bot.chat(`🌱 Plant eerst ${allSaplings.reduce((sum, s) => sum + s.count, 0)} saplings`)
+        const totalSaplings = allSaplings.reduce((sum, s) => sum + s.count, 0)
+        bot.chat(`🌱 Plant eerst ${totalSaplings} saplings`)
         
         for (const saplingItem of allSaplings) {
-          const treeType = saplingItem.name.replace('_sapling', '')
-          let saplingCount = saplingItem.count
+          if (!saplingItem || !saplingItem.name) continue
           
-          while (saplingCount > 0) {
+          const treeType = saplingItem.name.replace('_sapling', '')
+          const maxToPlant = 10 // Limit to prevent infinite loop
+          let planted = 0
+          
+          while (planted < maxToPlant) {
+            // Check if we still have this sapling
+            const currentSapling = bot.inventory.items().find(i => i.name === saplingItem.name)
+            if (!currentSapling || currentSapling.count === 0) break
+            
             const currentPos = bot.entity.position.clone()
             const saplingPos = findSaplingPosition(bot, currentPos, 5)
-            if (saplingPos) {
-              try {
-                const movements = new Movements(bot)
-                bot.pathfinder.setMovements(movements)
-                const goal = new goals.GoalNear(saplingPos.x, saplingPos.y, saplingPos.z, 2)
-                await bot.pathfinder.goto(goal)
-                const planted = await replantSapling(bot, saplingPos, treeType)
-                if (!planted) break
-                saplingCount--
-              } catch (e) {
-                break
-              }
-            } else {
+            if (!saplingPos) {
+              bot.chat(`⚠️ Geen ruimte meer voor saplings`)
+              break
+            }
+            
+            try {
+              const movements = new Movements(bot)
+              bot.pathfinder.setMovements(movements)
+              const goal = new goals.GoalNear(saplingPos.x, saplingPos.y, saplingPos.z, 2)
+              await bot.pathfinder.goto(goal)
+              const success = await replantSapling(bot, saplingPos, treeType)
+              if (!success) break
+              planted++
+              await new Promise(r => setTimeout(r, 200))
+            } catch (e) {
+              if (bot._debug) console.log('[Wood] Sapling plant error:', e.message)
               break
             }
           }
@@ -292,7 +303,7 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
         const remainingSaplings = bot.inventory.items().filter(i => i.name && i.name.includes('sapling'))
         if (remainingSaplings.length > 0) {
           const total = remainingSaplings.reduce((sum, s) => sum + s.count, 0)
-          bot.chat(`🌱 ${total} saplings over (geen ruimte)`)
+          bot.chat(`🌱 ${total} saplings over`)
         }
       }
     }

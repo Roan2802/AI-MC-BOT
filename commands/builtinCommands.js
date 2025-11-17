@@ -68,18 +68,38 @@ module.exports = {
    * @param {string} playerName
    */
   async follow(bot, playerName) {
-    if (!playerName) {
-      bot.chat('Gebruik: !follow <spelernaam>')
-      return
-    }
+    // Default to the sender when no name provided
+    if (!playerName) playerName = bot._lastCommandSender
+
     try {
+      // Toggle behavior: if already following same player (or anyone when no name given), stop
+      if (bot._followingPlayer && (!playerName || bot._followingPlayer.toLowerCase() === String(playerName).toLowerCase())) {
+        stopMovement(bot)
+        bot.chat('⏹️ Volgen uit')
+        return
+      }
+
+      if (!playerName) {
+        bot.chat('Gebruik: !follow <spelernaam>')
+        return
+      }
+
       followPlayer(bot, playerName)
-      // mark last follow to avoid immediate resets
       bot._lastFollowGoal = playerName
-      bot.chat(`👁️ Ik volg nu ${playerName}`)
+      bot.chat(`👁️ Ik volg nu ${playerName} (toggle: nogmaals = uit)`) 
     } catch (e) {
       bot.chat(`Kon ${playerName} niet volgen: ${e.message}`)
     }
+  },
+
+  /**
+   * volg <playerName> - Volg een speler (Dutch alias for follow)
+   * @param {object} bot
+   * @param {string} playerName
+   */
+  async volg(bot, playerName) {
+    // Just call the follow function
+    return this.follow(bot, playerName)
   },
 
   /**
@@ -186,7 +206,8 @@ module.exports = {
     try {
       bot.chat(`🌲 Start houthakken... (${n} logs - simplified workflow)`)
       console.log('[Chop] Starting harvestWood with', n, 'logs')
-      const got = await harvestWood(bot, 20, n)
+      // Use a larger search radius to make pre-axe log gathering more reliable
+      const got = await harvestWood(bot, 48, n)
       console.log('[Chop] harvestWood completed, got', got, 'logs')
       bot.chat(`✅ Klaar: ${got} logs verzameld`)
     } catch (e) {
@@ -546,7 +567,7 @@ module.exports = {
       '!status - Toon positie en gezondheid',
       '!hello - Begroeting',
       '!stop - Stop alle beweging',
-      '!follow <naam> - Volg speler',
+      '!follow [naam] / !volg [naam] - Volg speler (nogmaals = stop; zonder naam = afzender)',
       '!come <naam> - Kom naar speler',
       '!stay - Blijf hier',
       '!mine [bron] - Mijn resource (standaard: oak_log)',

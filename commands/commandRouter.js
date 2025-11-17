@@ -114,6 +114,8 @@ function initCommandRouter(bot) {
 
         if (builtin[cmd]) {
           try {
+            // Track who issued the command so handlers can default to sender
+            bot._lastCommandSender = username
             await builtin[cmd](bot, ...args)
           } catch (e) {
             console.error(`[Router] Error in !${cmd}:`, e.message)

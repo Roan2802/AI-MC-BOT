@@ -89,10 +89,19 @@ async function collectNearbyItems(bot, radius = 10) {
       try {
         const dist = bot.entity.position.distanceTo(item.position)
         if (dist > 2) {
+          // Use fresh movements tuned for collection to avoid unnecessary digging
+          try {
+            const movements = new Movements(bot)
+            // Be conservative while collecting loose items
+            movements.canDig = false
+            movements.allow1by1towers = false
+            movements.scafoldingBlocks = []
+            bot.pathfinder.setMovements(movements)
+          } catch (e) {}
           const goal = new goals.GoalNear(item.position.x, item.position.y, item.position.z, 1)
           await bot.pathfinder.goto(goal)
         }
-        await new Promise(r => setTimeout(r, 200)) // Let auto-pickup work
+        await new Promise(r => setTimeout(r, 250)) // Let auto-pickup work
       } catch (e) {
         // Item may already be picked up or despawned
         if (bot._debug) console.log('[Wood] Item collection error:', e.message)
@@ -516,13 +525,23 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
       .filter(i => i && i.name && i.name.includes('log'))
       .reduce((sum, item) => sum + (item.count || 0), 0)
 
-  const ensureLogSupply = async (minLogs = 1) => {
+  const ensureLogSupply = async (minLogs = 1, absolute = false) => {
     // Enable stuck detection during log gathering
     bot.isDoingTask = true
-    
+
+    const startCount = countLogsInInventory()
     let attempts = 0
 
-    while (countLogsInInventory() < minLogs && attempts < 3) {
+    const notEnough = () => {
+      const current = countLogsInInventory()
+      return absolute ? (current - startCount) < minLogs : current < minLogs
+    }
+
+    if (absolute) {
+      bot.chat(`🌲 Eerst ${minLogs} logs hakken voor de bijl...`)
+    }
+
+    while (notEnough() && attempts < 8) {
       attempts++
       const nextLog = bot.findBlock({
         matching: b => b && b.name && b.name.includes('log'),
@@ -559,20 +578,27 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
       }
 
       try {
+        bot._isDigging = true
         await bot.dig(targetBlock)
         console.log('[Wood] ensureLogSupply: Log chopped, collecting...')
         await new Promise(r => setTimeout(r, 800))
         await collectNearbyItems(bot, 8)
-        console.log(`[Wood] ensureLogSupply: Inventory now has ${countLogsInInventory()} logs`)
+        const gained = countLogsInInventory() - startCount
+        console.log(`[Wood] ensureLogSupply: Inventory now has ${countLogsInInventory()} logs (new +${Math.max(gained,0)})`)
+        if (absolute) {
+          bot.chat(`📦 Logs verzameld: ${Math.max(gained,0)}/${minLogs}`)
+        }
       } catch (digErr) {
         console.log('[Wood] ensureLogSupply: Dig failed:', digErr.message)
+      } finally {
+        bot._isDigging = false
       }
     }
 
     // Disable stuck detection after log gathering (re-enable later during tree chopping)
     bot.isDoingTask = false
-    
-    return countLogsInInventory() >= minLogs
+
+    return absolute ? (countLogsInInventory() - startCount) >= minLogs : countLogsInInventory() >= minLogs
   }
 
   try {
@@ -587,13 +613,10 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
       console.log('[Wood] No axe found, crafting wooden axe...')
       bot.chat('🔨 Crafting wooden axe...')
 
-      // Zorg dat we minstens 5 logs hebben (voor zekerheid - als er 1 niet opgepakt wordt)
-      let hasLogs = countLogsInInventory() >= 5
-      if (!hasLogs) {
-        console.log('[Wood] Not enough logs in inventory, mining logs first...')
-        bot.chat('🌲 Getting logs for axe...')
-        hasLogs = await ensureLogSupply(5)
-      }
+      // Altijd eerst 5 logs hakken voordat we de bijl craften
+      console.log('[Wood] Always chopping 5 logs before axe craft...')
+      bot.chat('🌲 Eerst 5 logs hakken voor de bijl...')
+      const hasLogs = await ensureLogSupply(5, true)
 
       if (!hasLogs) {
         console.log('[Wood] Still not enough logs for axe + crafting table')
@@ -643,23 +666,47 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
       })
 
       // Craft sticks if needed (MANUALLY without closing window)
-      const planksForSticks = bot.inventory.items().find(
-        i => i && i.name && i.name.includes('planks')
-      )
-      const sticksNow = bot.inventory.items().find(i => i.name === 'stick')
-      const currentStickCount = sticksNow ? sticksNow.count : 0
+      const allPlanks = bot.inventory.items().filter(i => i && i.name && i.name.includes('planks'))
+      const totalPlanks = allPlanks.reduce((s, it) => s + (it.count || 0), 0)
+      const totalSticks = bot.inventory.items().filter(i => i && i.name === 'stick').reduce((s, it) => s + (it.count || 0), 0)
       
-      if (currentStickCount < 2 && planksForSticks && planksForSticks.count >= 2) {
+      if (totalSticks < 2 && totalPlanks >= 2) {
         console.log('[Wood] Crafting sticks for axe (without closing window)...')
         
         try {
           const stickItemId = bot.registry.itemsByName.stick
           if (stickItemId) {
-            const recipes = bot.recipesFor(stickItemId.id, null, 1, null)
-            if (recipes && recipes.length > 0) {
-              await bot.craft(recipes[0], 1, null) // Craft 4 sticks
+            // Prefer crafting via the opened crafting table context
+            let crafted = false
+            if (craftingTableBlock) {
+              const tableRecipes = bot.recipesFor(stickItemId.id, null, 1, craftingTableBlock)
+              if (tableRecipes && tableRecipes.length > 0) {
+                await bot.craft(tableRecipes[0], 1, craftingTableBlock) // Craft 4 sticks at table
+                crafted = true
+              }
+            }
+            if (!crafted) {
+              const invRecipes = bot.recipesFor(stickItemId.id, null, 1, null)
+              if (invRecipes && invRecipes.length > 0) {
+                // If table is open, temporarily close and craft in 2x2
+                const hadWindow = !!bot.currentWindow
+                if (hadWindow) {
+                  try { bot.closeWindow(bot.currentWindow) } catch (e) {}
+                  await new Promise(r => setTimeout(r, 200))
+                }
+                await bot.craft(invRecipes[0], 1, null)
+                crafted = true
+                if (hadWindow && craftingTableBlock) {
+                  await bot.openBlock(craftingTableBlock)
+                  await new Promise(r => setTimeout(r, 200))
+                }
+              }
+            }
+            if (crafted) {
               console.log('[Wood] Crafted sticks')
               await new Promise(r => setTimeout(r, 400))
+            } else {
+              console.log('[Wood] No recipe found to craft sticks')
             }
           }
         } catch (e) {
@@ -678,11 +725,11 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
       console.log('[Wood] Crafting wooden axe...')
       
       // Check materials
-      const planksNow = bot.inventory.items().find(i => i.name && i.name.includes('planks'))
-      const sticksForAxe = bot.inventory.items().find(i => i.name === 'stick')
-      console.log(`[Wood] Materials: planks=${planksNow ? planksNow.count : 0}, sticks=${sticksForAxe ? sticksForAxe.count : 0}`)
+      const totalPlanksNow = bot.inventory.items().filter(i => i.name && i.name.includes('planks')).reduce((s, it) => s + (it.count || 0), 0)
+      const totalSticksNow = bot.inventory.items().filter(i => i.name === 'stick').reduce((s, it) => s + (it.count || 0), 0)
+      console.log(`[Wood] Materials: planks(total)=${totalPlanksNow}, sticks(total)=${totalSticksNow}`)
       
-      if (!planksNow || planksNow.count < 3 || !sticksForAxe || sticksForAxe.count < 2) {
+      if (totalPlanksNow < 3 || totalSticksNow < 2) {
         console.log('[Wood] Insufficient materials for axe')
         bot.chat('❌ Not enough materials for axe')
         bot.isDoingTask = false
@@ -739,6 +786,7 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
             await bot.equip(axe, 'hand')
           }
           
+          try { bot._isDigging = true } catch (e) {}
           await bot.dig(tableAfter)
           await new Promise(r => setTimeout(r, 800))
           await collectNearbyItems(bot, 8)
@@ -746,6 +794,8 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
           bot.chat('✅ Crafting table collected!')
         } catch (digErr) {
           console.log('[Wood] Could not pick up temporary crafting table:', digErr.message)
+        } finally {
+          try { bot._isDigging = false } catch (e) {}
         }
       }
     } else {
@@ -881,6 +931,7 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
             continue
           }
 
+          try { bot._isDigging = true } catch (e) {}
           await bot.dig(currentBlock)
           collected++
           console.log(`[Wood] Chopped log ${collected}/${maxBlocks}`)
@@ -907,6 +958,8 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
         } catch (digErr) {
           console.log('[Wood] Error chopping log:', digErr.message)
           collected++
+        } finally {
+          try { bot._isDigging = false } catch (e) {}
         }
       }
 

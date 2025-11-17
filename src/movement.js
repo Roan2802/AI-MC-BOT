@@ -30,6 +30,7 @@ function setupPathfinder(bot) {
 /**
  * Follow a player continuously.
  * Bot will keep moving toward player, maintaining ~2 block distance.
+ * Follow persists until explicitly stopped with stop() or stay().
  * 
  * @param {object} bot - Mineflayer bot instance
  * @param {string} playerName - Username to follow
@@ -46,8 +47,43 @@ function followPlayer(bot, playerName) {
     try { bot.setControlState && bot.setControlState('jump', false) } catch (e) {}
     bot.pathfinder.setMovements(movements)
     const goal = new GoalFollow(player.entity, 2)
-    bot.pathfinder.setGoal(goal)
-    console.log(`[Movement] Following ${playerName}`)
+    bot.pathfinder.setGoal(goal, true) // true = dynamic goal that updates continuously
+    
+    // Store follow state to maintain persistence
+    bot._followingPlayer = playerName
+    
+    // Set up continuous follow monitor (updates every 500ms)
+    if (bot._followInterval) {
+      clearInterval(bot._followInterval)
+    }
+    
+    bot._followInterval = setInterval(() => {
+      if (!bot._followingPlayer) {
+        clearInterval(bot._followInterval)
+        bot._followInterval = null
+        return
+      }
+      
+      const currentPlayer = bot.players[bot._followingPlayer]
+      if (!currentPlayer || !currentPlayer.entity) {
+        console.log(`[Movement] Lost sight of ${bot._followingPlayer}, stopping follow`)
+        bot._followingPlayer = null
+        clearInterval(bot._followInterval)
+        bot._followInterval = null
+        return
+      }
+      
+      // Re-apply goal to ensure continuous following
+      const dist = bot.entity.position.distanceTo(currentPlayer.entity.position)
+      if (dist > 3) {
+        const movements = new Movements(bot)
+        bot.pathfinder.setMovements(movements)
+        const goal = new GoalFollow(currentPlayer.entity, 2)
+        bot.pathfinder.setGoal(goal, true)
+      }
+    }, 500)
+    
+    console.log(`[Movement] Following ${playerName} (continuous mode)`)
   } catch (e) {
     console.error('[Movement] Follow error:', e.message)
     throw e
@@ -109,12 +145,23 @@ function moveToPosition(bot, position) {
 
 /**
  * Stop all movement and cancel current goal.
+ * Also stops continuous follow mode if active.
  * 
  * @param {object} bot - Mineflayer bot instance
  * @throws {Error} If pathfinder unavailable
  */
 function stop(bot) {
   try {
+    // Stop continuous follow if active
+    if (bot._followingPlayer) {
+      console.log(`[Movement] Stopping follow of ${bot._followingPlayer}`)
+      bot._followingPlayer = null
+    }
+    if (bot._followInterval) {
+      clearInterval(bot._followInterval)
+      bot._followInterval = null
+    }
+    
     bot.pathfinder.setGoal(null)
     console.log('[Movement] Stopped')
   } catch (e) {
@@ -142,7 +189,7 @@ function stay(bot) {
 function initStuckDetector(bot) {
   let lastPosition = bot.entity.position.clone()
   let lastMoveTime = Date.now()
-  const STUCK_TIMEOUT = 10000 // 10 seconds
+  const STUCK_TIMEOUT = 15000 // 15 seconds, less aggressive
   const STUCK_DISTANCE = 0.5 // Movement threshold
   
   // Task tracking - stuck detector only works during active tasks
@@ -175,6 +222,13 @@ function initStuckDetector(bot) {
         lastPosition = currentPos.clone()
         lastMoveTime = Date.now()
       } else if (timeSinceMove > STUCK_TIMEOUT) {
+        // Skip clearing if bot is actively pathfinding or digging
+        try {
+          if ((bot.pathfinder && typeof bot.pathfinder.isMoving === 'function' && bot.pathfinder.isMoving()) || bot._isDigging) {
+            return
+          }
+        } catch (e) {}
+
         // Bot is stuck DURING TASK! Break blocking blocks
         console.log('[Movement] ⚠️ Bot stuck during task! Breaking blocking blocks...')
         bot.chat('⚠️ Stuck! Clearing path...')

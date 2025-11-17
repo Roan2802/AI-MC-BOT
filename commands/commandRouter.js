@@ -84,7 +84,7 @@ function initCommandRouter(bot) {
     if (bot._debug) console.log('[Router] skipping automation loop in headless/test mode')
   }
 
-  bot.on('chat', (username, message) => {
+  bot.on('chat', async (username, message) => {
     if (username === bot.username) return
 
     // Hard command (starts with !)
@@ -123,7 +123,7 @@ function initCommandRouter(bot) {
                 bot.chat(`Onbekend commando: ${cmd}`)
         }
       })
-      processQueue()
+      await processQueue()
       return
     }
 
@@ -154,7 +154,7 @@ function initCommandRouter(bot) {
           bot.chat('Fout bij verwerking van je bericht.')
         }
       })
-      processQueue()
+      await processQueue()
     }
   });
 

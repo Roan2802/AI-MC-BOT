@@ -176,17 +176,26 @@ module.exports = {
   },
 
   /**
-   * chop - Harvest nearby wood (best-effort)
+   * chop - Harvest nearby wood with replanting and auto-craft options
    * @param {object} bot
+   * @param {string} count - Number of logs to harvest
+   * @param {string} options - 'planks' or 'sticks' to auto-craft
    */
-  async chop(bot, count = '32') {
+  async chop(bot, count = '32', options = '') {
     const n = parseInt(count, 10) || 32
+    const opts = {
+      replant: true,
+      craftPlanks: options.includes('plank'),
+      craftSticks: options.includes('stick')
+    }
+    
     try {
-      bot.chat(`🌲 Ik ga hout hakken... (${n} blokken)`)
-      const got = await harvestWood(bot, 20, n)
-      bot.chat(`✅ Klaar met hakken: ${got} blokken verzameld`)
+      bot.chat(`🌲 Ik ga hout hakken... (${n} logs, ${opts.replant ? 'met replant' : 'zonder replant'})`)
+      const got = await harvestWood(bot, 20, n, opts)
+      bot.chat(`✅ Klaar met hakken: ${got} logs verzameld`)
     } catch (e) {
       bot.chat(`❌ Hout hakken mislukt: ${e && e.message}`)
+      console.error('[Chop] Error:', e)
     }
   },
 

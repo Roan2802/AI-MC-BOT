@@ -323,6 +323,7 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
     console.log('[Wood] STEP 4: Find tree')
     const origin = bot.entity.position
     
+    console.log('[Wood] Searching for log blocks...')
     // STEP 3: Find nearest log block
     const logBlock = bot.findBlock({
       matching: b => b && b.name && b.name.includes('log'),
@@ -330,32 +331,44 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
       count: 1
     })
     
+    console.log('[Wood] Log block found:', logBlock ? logBlock.name : 'null')
     if (!logBlock) {
       if (bot._debug) console.log('[Wood] No more trees found')
       break
     }
 
+    console.log('[Wood] Getting tree type...')
     // Get tree type for sapling
     const treeType = logBlock.name.replace('_log', '')
     const basePos = logBlock.position.clone()
 
+    console.log('[Wood] Finding connected logs...')
     // Find all connected logs in this tree
     const cluster = findConnectedLogs(bot, logBlock, radius)
+    console.log('[Wood] Cluster found:', cluster ? cluster.length : 'null')
     if (!cluster || cluster.length === 0) break
 
+    console.log('[Wood] About to send chat message...')
     bot.chat(`🌲 Boom hakken: ${cluster.length} logs (${treeType})`)
+    console.log('[Wood] Chat message sent')
 
+    console.log('[Wood] Sorting cluster...')
     // Sort by y descending (top to bottom) to prevent floating logs
     cluster.sort((a, b) => b.position.y - a.position.y)
+    console.log('[Wood] Cluster sorted, starting mining loop')
 
     // STEP 4: Mine all logs in this tree
     for (const block of cluster) {
+      console.log('[Wood] Mining block at', block.position, 'collected:', collected, '/', maxBlocks)
       if (collected >= maxBlocks) break
       
       try {
+        console.log('[Wood] Checking distance to block...')
         // Navigate to block if too far
         const dist = bot.entity.position.distanceTo(block.position)
+        console.log('[Wood] Distance:', dist)
         if (dist > 4.5) {
+          console.log('[Wood] Too far, navigating...')
           const movements = new Movements(bot)
           movements.canDig = true // Allow breaking obstacles
           bot.pathfinder.setMovements(movements)
@@ -363,7 +376,9 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
           try {
             const goal = new goals.GoalNear(block.position.x, block.position.y, block.position.z, 3)
             await bot.pathfinder.goto(goal)
+            console.log('[Wood] Navigation complete')
           } catch (navError) {
+            console.log('[Wood] Navigation failed:', navError.message)
             // If stuck, try to break obstacle
             if (bot._debug) console.log('[Wood] Navigation blocked, trying to clear path')
             const obstacle = bot.blockAt(bot.entity.position.offset(0, 0, 1))
@@ -374,28 +389,36 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
           }
         }
         
+        console.log('[Wood] Equipping axe...')
         // Equip best axe before digging
         const axe = getBestAxe(bot)
         if (axe) await bot.equip(axe, 'hand')
+        console.log('[Wood] Axe equipped, starting dig...')
 
         // Dig the block
         await bot.dig(block, true)
+        console.log('[Wood] Block dug successfully')
         collected++
         
         // Small delay for drops to spawn
         await new Promise(r => setTimeout(r, 300))
         
       } catch (e) {
+        console.log('[Wood] Dig failed with error:', e.message)
         if (bot._debug) console.log('[Wood] Dig failed:', e.message)
       }
     }
 
     treesChopped++
+    console.log('[Wood] Tree chopped, total trees:', treesChopped)
     bot.chat(`✅ Boom ${treesChopped} gehakt`)
 
+    console.log('[Wood] STEP 5: Collect items')
     // STEP 5: Collect all items from this tree
     await new Promise(r => setTimeout(r, 1000)) // Wait for all drops
+    console.log('[Wood] About to call collectNearbyItems...')
     await collectNearbyItems(bot, 15)
+    console.log('[Wood] collectNearbyItems completed')
     bot.chat(`📦 Items verzameld`)
 
     // Note: Saplings will be planted at the start of next loop iteration (before crafting table)

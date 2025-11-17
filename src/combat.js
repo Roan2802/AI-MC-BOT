@@ -272,4 +272,4 @@ function initCombatSystem(bot, config) {
   }
 }
 
-module.exports = { initCombatSystem }
+export { initCombatSystem }

@@ -264,43 +264,46 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
     // Continue until we reach maxBlocks or no more trees found
     while (collected < maxBlocks) {
       console.log(`[Wood] Loop iteration - collected: ${collected}/${maxBlocks}`)
-    // STEP 1: Plant saplings FIRST (simple version - no pathfinding to prevent crashes)
-    if (opts.replant) {
-      try {
-        const allSaplings = bot.inventory.items().filter(i => i.name && i.name.includes('sapling'))
-        if (allSaplings.length > 0) {
-          const totalSaplings = allSaplings.reduce((sum, s) => sum + s.count, 0)
-          bot.chat(`🌱 ${totalSaplings} saplings in inventory`)
-          
-          // Plant up to 3 saplings nearby without complex pathfinding
-          let planted = 0
-          for (const saplingItem of allSaplings) {
-            if (planted >= 3) break
-            if (!saplingItem || !saplingItem.name) continue
+      
+      // STEP 1: Plant saplings FIRST (simple version - no pathfinding to prevent crashes)
+      if (opts.replant) {
+        try {
+          const allSaplings = bot.inventory.items().filter(i => i.name && i.name.includes('sapling'))
+          if (allSaplings.length > 0) {
+            const totalSaplings = allSaplings.reduce((sum, s) => sum + s.count, 0)
+            bot.chat(`🌱 ${totalSaplings} saplings in inventory`)
             
-            const treeType = saplingItem.name.replace('_sapling', '')
-            const currentPos = bot.entity.position.clone()
-            const saplingPos = findSaplingPosition(bot, currentPos, 5)
-            
-            if (saplingPos && saplingPos.distanceTo(currentPos) < 3) {
-              try {
-                await replantSapling(bot, saplingPos, treeType)
-                planted++
-                await new Promise(r => setTimeout(r, 300))
-              } catch (e) {
-                if (bot._debug) console.log('[Wood] Sapling plant failed:', e.message)
+            // Plant up to 3 saplings nearby without complex pathfinding
+            let planted = 0
+            for (const saplingItem of allSaplings) {
+              if (planted >= 3) break
+              if (!saplingItem || !saplingItem.name) continue
+              
+              const treeType = saplingItem.name.replace('_sapling', '')
+              const currentPos = bot.entity.position.clone()
+              const saplingPos = findSaplingPosition(bot, currentPos, 5)
+              
+              if (saplingPos && saplingPos.distanceTo(currentPos) < 3) {
+                try {
+                  await replantSapling(bot, saplingPos, treeType)
+                  planted++
+                  await new Promise(r => setTimeout(r, 300))
+                } catch (e) {
+                  if (bot._debug) console.log('[Wood] Sapling plant failed:', e.message)
+                }
               }
             }
           }
+        } catch (e) {
+          console.log('[Wood] Sapling phase error:', e.message)
         }
-      } catch (e) {
-        console.log('[Wood] Sapling phase error:', e.message)
       }
-    }
-    
-    // STEP 2: Check if we have an axe, try to craft one if we have materials
-    const { ensureToolFor } = require('./crafting.js')
-    const currentAxe = getBestAxe(bot)
+      
+      console.log('[Wood] STEP 2: Check axe')
+      
+      // STEP 2: Check if we have an axe, try to craft one if we have materials
+      const { ensureToolFor } = require('./crafting.js')
+      const currentAxe = getBestAxe(bot)
     
     if (!currentAxe) {
       // Try to craft axe if we have enough materials

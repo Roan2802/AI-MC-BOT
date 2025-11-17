@@ -63,14 +63,15 @@ async function plantSaplingsAtTreeBases(bot, treeBases, options = {}) {
 
         // Find suitable position near tree base (within 3 blocks, not on the base itself)
         const plantPos = findPlantingSpotNearBase(bot, basePos, plantedPositions)
+        if (!plantPos) {
         const existingWorldSaplings = findNearbyWorldSaplings(basePos)
-        const plantPos = findPlantingSpotNearBase(
+        const targetPlantPos = findPlantingSpotNearBase(
           bot,
           basePos,
           [...plantedPositions, ...existingWorldSaplings],
           minSaplingSpacing
         )
-        if (!plantPos) {
+        if (!targetPlantPos) {
           console.log(`[Wood] No suitable planting spot near tree base at ${basePos.x}, ${basePos.z}`)
           continue
         }
@@ -79,13 +80,16 @@ async function plantSaplingsAtTreeBases(bot, treeBases, options = {}) {
         try {
           await bot.equip(sapling, 'hand')
           const blockBelow = bot.blockAt(plantPos.offset(0, -1, 0))
+          const blockBelow = bot.blockAt(targetPlantPos.offset(0, -1, 0))
 
           if (blockBelow && (blockBelow.name === 'dirt' || blockBelow.name === 'grass_block' || blockBelow.name === 'podzol')) {
             await bot.placeBlock(blockBelow, { x: 0, y: 1, z: 0 })
             planted++
             plantedPositions.push(plantPos)
+            plantedPositions.push(targetPlantPos)
             console.log(
               `[Wood] Planted ${saplingName} at ${Math.floor(plantPos.x)}, ${Math.floor(plantPos.z)}`
+              `[Wood] Planted ${saplingName} at ${Math.floor(targetPlantPos.x)}, ${Math.floor(targetPlantPos.z)}`
             )
             await new Promise(r => setTimeout(r, 200))
           }
@@ -95,6 +99,22 @@ async function plantSaplingsAtTreeBases(bot, treeBases, options = {}) {
       } catch (baseErr) {
         console.error('[Wood] Error planting at tree base:', baseErr.message)
       }
+    }
+
+    if (planted > 0) {
+      bot.chat(`🌱 ${planted} saplings geplant bij boom bases`)
+    }
+    return planted
+  } catch (e) {
+    console.error('[Wood] plantSaplingsAtTreeBases error:', e.message)
+    return 0
+  }
+}
+
+/**
+ * Detect tree type at base position
+ * @param {import('mineflayer').Bot} bot
+ * @param {Vec3} basePos
 @@ -98,76 +119,76 @@ async function detectTreeTypeAtBase(bot, basePos) {
       basePos.offset(1, 0, 0),
       basePos.offset(-1, 0, 0),

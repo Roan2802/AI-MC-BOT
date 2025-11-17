@@ -9,7 +9,7 @@
  */
 
 const { mineResource } = require('./mining.js')
-const { ensureToolFor } = require('./crafting.js')
+const { getBestAxe } = require('./crafting.js')
 
 /**
  * Find connected log blocks (flood-fill) starting from a root log.
@@ -52,7 +52,46 @@ function findConnectedLogs(bot, startBlock, radius = 20) {
 }
 
 /**
- * Find leaves connected to a tree to determine sapling position
+ * Collect nearby dropped items (logs, sticks, saplings, apples)
+ * @param {import('mineflayer').Bot} bot
+ * @param {number} radius
+ * @returns {Promise<void>}
+ */
+async function collectNearbyItems(bot, radius = 10) {
+  try {
+    const pathfinderPkg = require('mineflayer-pathfinder')
+    const { goals } = pathfinderPkg
+    
+    // Items we want to collect
+    const wantedItems = ['log', 'sapling', 'stick', 'apple', 'planks']
+    
+    const nearbyItems = Object.values(bot.entities).filter(e => 
+      e.objectType === 'Item' && 
+      e.position.distanceTo(bot.entity.position) < radius &&
+      e.metadata && e.metadata[8] && // Item has metadata
+      wantedItems.some(wanted => {
+        const itemName = e.metadata[8].itemId ? 
+          bot.registry.items[e.metadata[8].itemId]?.name || '' : ''
+        return itemName.includes(wanted)
+      })
+    )
+    
+    for (const item of nearbyItems) {
+      try {
+        const dist = bot.entity.position.distanceTo(item.position)
+        if (dist > 2) {
+          const goal = new goals.GoalNear(item.position.x, item.position.y, item.position.z, 1)
+          await bot.pathfinder.goto(goal)
+        }
+        await new Promise(r => setTimeout(r, 200)) // Let auto-pickup work
+      } catch (e) {
+        // Item may already be picked up or despawned
+      }
+    }
+  } catch (e) {
+    if (bot._debug) console.log('[Wood] Collect items failed:', e.message)
+  }
+}
  * @param {import('mineflayer').Bot} bot
  * @param {Vec3} basePos - Base position of tree
  * @param {number} radius
@@ -63,6 +102,18 @@ function findSaplingPosition(bot, basePos, radius = 5) {
   const pos = basePos.clone()
   pos.y = Math.floor(pos.y)
   
+  // Check if position is at least 4 blocks away from other saplings
+  const existingSaplings = []
+  for (let dx = -8; dx <= 8; dx++) {
+    for (let dz = -8; dz <= 8; dz++) {
+      const checkPos = pos.offset(dx, 0, dz)
+      const block = bot.blockAt(checkPos)
+      if (block && block.name && block.name.includes('sapling')) {
+        existingSaplings.push(checkPos)
+      }
+    }
+  }
+  
   for (let dx = -1; dx <= 1; dx++) {
     for (let dz = -1; dz <= 1; dz++) {
       const checkPos = pos.offset(dx, 0, dz)
@@ -71,7 +122,12 @@ function findSaplingPosition(bot, basePos, radius = 5) {
       
       if (block && block.name === 'air' && below && 
           (below.name === 'dirt' || below.name === 'grass_block' || below.name === 'podzol')) {
-        return checkPos
+        
+        // Check 4-block spacing from other saplings
+        const tooClose = existingSaplings.some(s => s.distanceTo(checkPos) < 4)
+        if (!tooClose) {
+          return checkPos
+        }
       }
     }
   }
@@ -164,8 +220,10 @@ async function craftSticks(bot, count = 4) {
  * Harvest wood blocks within a radius by felling whole trees.
  * Features:
  * - Complete tree felling (top to bottom, no floating logs)
- * - Sapling replanting for sustainability
+ * - Sapling replanting for sustainability (4-block spacing)
  * - Auto-craft planks/sticks when inventory has logs
+ * - Obstacle breaking when stuck
+ * - Item collection (logs, saplings, sticks, apples)
  * 
  * @param {import('mineflayer').Bot} bot
  * @param {number} [radius=20]
@@ -183,8 +241,17 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
     craftSticks: options.craftSticks || false
   }
 
-  // ensure we have an axe
+  // Import ensureToolFor here to avoid circular dependency
+  const { ensureToolFor } = require('./crafting.js')
+  
+  // Ensure we have an axe (stone preferred if cobblestone available)
   await ensureToolFor(bot, 'wood')
+  
+  // Equip best axe
+  const bestAxe = getBestAxe(bot)
+  if (bestAxe) {
+    await bot.equip(bestAxe, 'hand')
+  }
 
   let collected = 0
   let treesChopped = 0
@@ -230,33 +297,37 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
         const dist = bot.entity.position.distanceTo(block.position)
         if (dist > 4.5) {
           const movements = new Movements(bot)
+          movements.canDig = true // Allow breaking obstacles
           bot.pathfinder.setMovements(movements)
-          const goal = new goals.GoalNear(block.position.x, block.position.y, block.position.z, 3)
-          await bot.pathfinder.goto(goal)
+          
+          try {
+            const goal = new goals.GoalNear(block.position.x, block.position.y, block.position.z, 3)
+            await bot.pathfinder.goto(goal)
+          } catch (navError) {
+            // If stuck, try to break obstacle
+            if (bot._debug) console.log('[Wood] Navigation blocked, trying to clear path')
+            const obstacle = bot.blockAt(bot.entity.position.offset(0, 0, 1))
+            if (obstacle && obstacle.name !== 'air' && obstacle.diggable) {
+              await bot.dig(obstacle)
+              await new Promise(r => setTimeout(r, 300))
+            }
+          }
         }
+        
+        // Equip best axe before digging
+        const axe = getBestAxe(bot)
+        if (axe) await bot.equip(axe, 'hand')
 
-        // Dig the block and wait for drops
+        // Dig the block
         await bot.dig(block, true)
         collected++
         
-        // Wait longer for items to spawn (Minecraft delay)
-        await new Promise(r => setTimeout(r, 800))
+        // Wait for items to spawn
+        await new Promise(r => setTimeout(r, 500))
         
-        // Collect nearby items (logs, saplings, sticks, etc.)
-        const nearbyItems = Object.values(bot.entities).filter(e => 
-          e.objectType === 'Item' && 
-          e.position.distanceTo(bot.entity.position) < 8
-        )
+        // Collect nearby items
+        await collectNearbyItems(bot, 12)
         
-        for (const item of nearbyItems) {
-          try {
-            const goal = new goals.GoalNear(item.position.x, item.position.y, item.position.z, 1)
-            await bot.pathfinder.goto(goal)
-            await new Promise(r => setTimeout(r, 100)) // Let auto-pickup work
-          } catch (e) {
-            // Item may already be picked up or despawned
-          }
-        }
       } catch (e) {
         if (bot._debug) console.log('[Wood] Dig failed:', e.message)
       }
@@ -264,18 +335,33 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
 
     treesChopped++
 
+    // Collect any remaining items from this tree
+    await new Promise(r => setTimeout(r, 800))
+    await collectNearbyItems(bot, 15)
+
     // Replant sapling if enabled
     if (opts.replant) {
-      await new Promise(r => setTimeout(r, 500)) // Wait for drops
       const saplingPos = findSaplingPosition(bot, basePos, 3)
       if (saplingPos) {
-        await replantSapling(bot, saplingPos, treeType)
+        // Navigate close to sapling position
+        try {
+          const movements = new Movements(bot)
+          bot.pathfinder.setMovements(movements)
+          const goal = new goals.GoalNear(saplingPos.x, saplingPos.y, saplingPos.z, 2)
+          await bot.pathfinder.goto(goal)
+          await replantSapling(bot, saplingPos, treeType)
+        } catch (e) {
+          if (bot._debug) console.log('[Wood] Could not reach sapling position')
+        }
       }
     }
 
     // Small break between trees
-    await new Promise(r => setTimeout(r, 300))
+    await new Promise(r => setTimeout(r, 400))
   }
+
+  // Final item collection sweep
+  await collectNearbyItems(bot, 20)
 
   bot.chat(`✅ Houthakken klaar: ${collected} logs van ${treesChopped} bomen`)
 
@@ -298,5 +384,6 @@ module.exports = {
   craftPlanks, 
   craftSticks, 
   findConnectedLogs,
-  replantSapling 
+  replantSapling,
+  collectNearbyItems
 }

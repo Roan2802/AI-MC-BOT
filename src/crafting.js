@@ -136,7 +136,7 @@ async function ensureWoodenPickaxe(bot) {
 }
 
 /**
- * Check whether the bot has any axe in inventory.
+ * Check if bot currently has any axe equipped or in inventory.
  * @param {import('mineflayer').Bot} bot
  * @returns {boolean}
  */
@@ -146,33 +146,58 @@ function hasAxe(bot) {
 }
 
 /**
- * Ensure the bot has at least a wooden axe. Attempts to craft from logs/planks if necessary.
+ * Get best available axe (prefers stone > wooden)
+ * @param {import('mineflayer').Bot} bot
+ * @returns {Item|null}
+ */
+function getBestAxe(bot) {
+  const items = bot.inventory.items()
+  const axes = items.filter(i => i.name && i.name.includes('axe'))
+  
+  // Priority: diamond > iron > stone > wooden
+  const priority = ['diamond_axe', 'iron_axe', 'stone_axe', 'wooden_axe']
+  for (const axeName of priority) {
+    const axe = axes.find(a => a.name === axeName)
+    if (axe) return axe
+  }
+  return null
+}
+
+/**
+ * Ensure the bot has at least a wooden or stone axe. Prefers stone if cobblestone available.
  * @param {import('mineflayer').Bot} bot
  * @returns {Promise<boolean>}
  */
 async function ensureWoodenAxe(bot) {
-  if (hasAxe(bot)) return true
+  // Check if we already have an axe
+  const existingAxe = getBestAxe(bot)
+  if (existingAxe) {
+    await bot.equip(existingAxe, 'hand')
+    return true
+  }
   
   try {
+    // Check if we can make stone axe (preferred)
+    const hasCobble = bot.inventory.items().find(i => i.name === 'cobblestone')
+    const targetAxe = hasCobble && hasCobble.count >= 3 ? 'stone_axe' : 'wooden_axe'
+    
     // Step 1: Ensure we have planks (craft from logs if needed)
     let hasPlanks = bot.inventory.items().find(i => i.name && i.name.includes('planks'))
     const hasLogs = bot.inventory.items().find(i => i.name && i.name.includes('log'))
     
     if (!hasPlanks && hasLogs) {
-      // Craft planks from logs (1 log = 4 planks, need at least 7 for axe + table)
       const logItem = hasLogs
       const plankType = logItem.name.replace('_log', '_planks')
       const plankRecipes = bot.recipesFor(bot.registry.itemsByName[plankType].id, null, 1, null)
       
       if (plankRecipes && plankRecipes.length > 0) {
-        // Craft 2 logs worth of planks (8 planks total)
         const craftCount = Math.min(2, logItem.count)
         await bot.craft(plankRecipes[0], craftCount)
         hasPlanks = bot.inventory.items().find(i => i.name && i.name.includes('planks'))
       }
     }
     
-    if (!hasPlanks) {
+    if (!hasPlanks && targetAxe === 'wooden_axe') {
       console.log('[Crafting] No planks available to craft axe')
       return false
     }
@@ -180,10 +205,10 @@ async function ensureWoodenAxe(bot) {
     // Step 2: Ensure we have sticks (craft from planks if needed)
     let hasSticks = bot.inventory.items().find(i => i.name === 'stick')
     
-    if (!hasSticks) {
+    if (!hasSticks && hasPlanks) {
       const stickRecipes = bot.recipesFor(bot.registry.itemsByName.stick.id, null, 1, null)
       if (stickRecipes && stickRecipes.length > 0) {
-        await bot.craft(stickRecipes[0], 1) // 2 planks = 4 sticks
+        await bot.craft(stickRecipes[0], 1)
         hasSticks = bot.inventory.items().find(i => i.name === 'stick')
       }
     }
@@ -195,8 +220,9 @@ async function ensureWoodenAxe(bot) {
     
     // Step 3: Ensure we have crafting table
     let hasCraftingTable = bot.inventory.items().find(i => i.name === 'crafting_table')
+    let tablePlacedByUs = false
     
-    if (!hasCraftingTable) {
+    if (!hasCraftingTable && hasPlanks && hasPlanks.count >= 4) {
       const tableRecipes = bot.recipesFor(bot.registry.itemsByName.crafting_table.id, null, 1, null)
       if (tableRecipes && tableRecipes.length > 0) {
         await bot.craft(tableRecipes[0], 1)
@@ -204,11 +230,11 @@ async function ensureWoodenAxe(bot) {
       }
     }
     
-    // Step 4: Place crafting table if needed
+    // Step 4: Place crafting table
     let tableBlock = null
     if (hasCraftingTable) {
       // Check if there's already a crafting table nearby
-      const nearbyTable = bot.findBlock({
+      let nearbyTable = bot.findBlock({
         matching: b => b && b.name === 'crafting_table',
         maxDistance: 4
       })
@@ -219,6 +245,8 @@ async function ensureWoodenAxe(bot) {
         // Place crafting table
         const placed = await placeCraftingTable(bot)
         if (placed) {
+          tablePlacedByUs = true
+          await new Promise(r => setTimeout(r, 300))
           tableBlock = bot.findBlock({
             matching: b => b && b.name === 'crafting_table',
             maxDistance: 4
@@ -227,11 +255,32 @@ async function ensureWoodenAxe(bot) {
       }
     }
     
-    // Step 5: Craft wooden axe
-    const axeRecipes = bot.recipesFor(bot.registry.itemsByName.wooden_axe.id, null, 1, tableBlock)
+    if (!tableBlock) {
+      console.log('[Crafting] No crafting table available')
+      return false
+    }
+    
+    // Step 5: Craft axe (stone if possible, else wooden)
+    const axeRecipes = bot.recipesFor(bot.registry.itemsByName[targetAxe].id, null, 1, tableBlock)
     if (axeRecipes && axeRecipes.length > 0) {
       await bot.craft(axeRecipes[0], 1, tableBlock)
-      return hasAxe(bot)
+      bot.chat(`🪓 ${targetAxe.replace('_', ' ')} gecraft!`)
+    }
+    
+    // Step 6: Mine crafting table if we placed it
+    if (tablePlacedByUs && tableBlock) {
+      try {
+        await bot.dig(tableBlock)
+        await new Promise(r => setTimeout(r, 300))
+      } catch (e) {
+        console.log('[Crafting] Failed to pick up table:', e.message)
+      }
+    }
+    
+    // Equip the axe we just crafted
+    const newAxe = getBestAxe(bot)
+    if (newAxe) {
+      await bot.equip(newAxe, 'hand')
     }
     
     return hasAxe(bot)
@@ -524,6 +573,7 @@ module.exports = {
   tryCraft,
   ensureWoodenPickaxe,
   hasAxe,
+  getBestAxe,
   ensureWoodenAxe,
   ensureToolFor,
   placeCraftingTable,

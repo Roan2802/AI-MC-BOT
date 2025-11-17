@@ -819,7 +819,7 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
     const plantedSaplingPositions = [] // Track planted saplings for spacing
     
     while (collected < maxBlocks) {
-      if (treesChopped >= (options.maxTrees ?? 6)) {
+      if (treesChopped >= (options.maxTrees ?? 500)) {
         console.log('[Wood] Max tree limit reached for this run')
         break
       }

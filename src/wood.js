@@ -902,6 +902,14 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
         }
 
         try {
+          // Ensure best axe equipped before each log
+          try {
+            const bestAxe = getBestAxe(bot)
+            if (bestAxe && (!bot.heldItem || !bot.heldItem.name || !bot.heldItem.name.includes('axe') || bot.heldItem.name !== bestAxe.name)) {
+              await bot.equip(bestAxe, 'hand')
+            }
+          } catch (e) {}
+
           console.log(
             `[Wood] Chopping log at ${log.position.x}, ${log.position.y}, ${log.position.z}`
           )
@@ -943,18 +951,13 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
           await new Promise(r => setTimeout(r, 800))
           await collectNearbyItems(bot, 8)
           
-          // Re-equip axe after collecting items
-          if (currentAxe && currentAxe.name.includes('axe')) {
-            try {
-              await bot.equip(currentAxe, 'hand')
-            } catch (e) {
-              // If same axe not available, try to find any axe
-              const anyAxe = bot.inventory.items().find(i => i.name && i.name.includes('axe'))
-              if (anyAxe) {
-                await bot.equip(anyAxe, 'hand')
-              }
+          // Re-equip best axe after collecting items
+          try {
+            const bestAxeAfter = getBestAxe(bot)
+            if (bestAxeAfter) {
+              await bot.equip(bestAxeAfter, 'hand')
             }
-          }
+          } catch (e) {}
         } catch (digErr) {
           console.log('[Wood] Error chopping log:', digErr.message)
           collected++

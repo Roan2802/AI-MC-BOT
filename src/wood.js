@@ -439,6 +439,8 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
 
   let collected = 0
   let treesChopped = 0
+  let craftAttempts = 0  // Track craft attempts
+  let axeWasCrafted = false  // Track if we successfully crafted an axe
 
   try {
     console.log('[Wood] Verifying pathfinder availability...')
@@ -482,8 +484,10 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
       if (!hasAxe) {
         console.log('[Wood] - No axe, crafting one...')
         const axieCrafted = await ensureWoodenAxe(bot)
+        craftAttempts++
         if (axieCrafted) {
           console.log('[Wood] - ✅ Axe crafted!')
+          axeWasCrafted = true
           bot.chat('✅ Gereedschap klaar!')
         } else {
           console.log('[Wood] - Could not craft axe, will use bare hands')
@@ -491,6 +495,7 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
         }
       } else {
         console.log('[Wood] - ✅ Already have axe:', hasAxe.name)
+        axeWasCrafted = true  // Mark as already having it
       }
     } catch (prepErr) {
       console.error('[Wood] Tool preparation error:', prepErr.message)
@@ -719,6 +724,33 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
         console.log('[Wood] Chat error:', chatErr.message)
       }
 
+      // STEP 4b: Re-craft axe if needed and we haven't exhausted attempts
+      // Only try if: we don't have axe AND haven't successfully crafted one yet AND attempts < 2
+      if (!getBestAxe(bot) && !axeWasCrafted && craftAttempts < 2) {
+        console.log(`[Wood] STEP 4b: Retrying axe craft (attempt ${craftAttempts + 1}/2)...`)
+        try {
+          const materials = bot.inventory.items().find(i => i.name && i.name.includes('planks'))
+          if (materials && materials.count >= 3) {
+            console.log('[Wood] Materials available, retrying craft...')
+            const retried = await ensureWoodenAxe(bot)
+            craftAttempts++
+            if (retried) {
+              console.log('[Wood] ✅ Axe crafted on retry!')
+              axeWasCrafted = true
+              bot.chat('✅ Axe gecrafted!')
+            } else {
+              console.log('[Wood] Retry failed, continuing with bare hands')
+            }
+          } else {
+            craftAttempts++  // Count as attempt even if no materials
+            console.log('[Wood] Insufficient materials for retry')
+          }
+        } catch (retryErr) {
+          console.error('[Wood] Retry craft error:', retryErr.message)
+          craftAttempts++
+        }
+      }
+
       console.log('[Wood] STEP 5: Collect items')
       // STEP 5: Collect all items from this tree
       try {
@@ -747,13 +779,19 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
     // STEP 7: Pick up crafting table if it was placed
     console.log('[Wood] STEP 7: Picking up crafting table...')
     try {
-      const craftingTable = bot.findBlock({
-        matching: b => b && b.name === 'crafting_table',
-        maxDistance: 50,
-        count: 1
-      })
-      if (craftingTable) {
-        console.log('[Wood] Found crafting table at', craftingTable.position, ', picking up...')
+      let attempts = 0
+      while (attempts < 3) {  // Try up to 3 times to find and remove it
+        const craftingTable = bot.findBlock({
+          matching: b => b && b.name === 'crafting_table',
+          maxDistance: 60,
+          count: 1
+        })
+        if (!craftingTable) {
+          console.log('[Wood] ✅ No crafting table found - cleanup complete')
+          break
+        }
+        
+        console.log('[Wood] Found crafting table at', craftingTable.position, ', removing...')
         const dist = bot.entity.position.distanceTo(craftingTable.position)
         
         // Navigate to crafting table if too far
@@ -764,28 +802,31 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
             bot.pathfinder.setMovements(movements)
             const goal = new goals.GoalNear(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z, 2)
             await bot.pathfinder.goto(goal)
+            await new Promise(r => setTimeout(r, 300))
           } catch (navErr) {
             console.log('[Wood] Could not navigate to crafting table:', navErr.message)
+            attempts++
+            continue
           }
         }
         
         // Mine it with timeout
         try {
-          console.log('[Wood] Mining crafting table...')
+          console.log('[Wood] Mining crafting table (attempt', attempts + 1, ')...')
           await Promise.race([
             bot.dig(craftingTable),
             new Promise((_, reject) => setTimeout(() => reject(new Error('Dig timeout')), 5000))
           ])
-          console.log('[Wood] ✅ Crafting table picked up')
+          console.log('[Wood] ✅ Crafting table removed')
           await new Promise(r => setTimeout(r, 300))
+          break  // Success, exit loop
         } catch (digErr) {
           console.log('[Wood] Could not dig crafting table:', digErr.message)
+          attempts++
         }
-      } else {
-        console.log('[Wood] No crafting table found within 50 blocks')
       }
     } catch (tableErr) {
-      console.log('[Wood] Crafting table pickup error:', tableErr.message)
+      console.log('[Wood] Crafting table removal error:', tableErr.message)
     }
 
     try {

@@ -253,58 +253,43 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
   let collected = 0
   let treesChopped = 0
 
-  const pathfinderPkg = require('mineflayer-pathfinder')
-  const { Movements, goals } = pathfinderPkg
+  try {
+    const pathfinderPkg = require('mineflayer-pathfinder')
+    const { Movements, goals } = pathfinderPkg
 
-  // Continue until we reach maxBlocks or no more trees found
-  while (collected < maxBlocks) {
-    // STEP 1: Plant any saplings we have FIRST before crafting
+    // Continue until we reach maxBlocks or no more trees found
+    while (collected < maxBlocks) {
+    // STEP 1: Plant saplings FIRST (simple version - no pathfinding to prevent crashes)
     if (opts.replant) {
-      const allSaplings = bot.inventory.items().filter(i => i.name && i.name.includes('sapling'))
-      if (allSaplings.length > 0) {
-        const totalSaplings = allSaplings.reduce((sum, s) => sum + s.count, 0)
-        bot.chat(`🌱 Plant eerst ${totalSaplings} saplings`)
-        
-        for (const saplingItem of allSaplings) {
-          if (!saplingItem || !saplingItem.name) continue
+      try {
+        const allSaplings = bot.inventory.items().filter(i => i.name && i.name.includes('sapling'))
+        if (allSaplings.length > 0) {
+          const totalSaplings = allSaplings.reduce((sum, s) => sum + s.count, 0)
+          bot.chat(`🌱 ${totalSaplings} saplings in inventory`)
           
-          const treeType = saplingItem.name.replace('_sapling', '')
-          const maxToPlant = 10 // Limit to prevent infinite loop
+          // Plant up to 3 saplings nearby without complex pathfinding
           let planted = 0
-          
-          while (planted < maxToPlant) {
-            // Check if we still have this sapling
-            const currentSapling = bot.inventory.items().find(i => i.name === saplingItem.name)
-            if (!currentSapling || currentSapling.count === 0) break
+          for (const saplingItem of allSaplings) {
+            if (planted >= 3) break
+            if (!saplingItem || !saplingItem.name) continue
             
+            const treeType = saplingItem.name.replace('_sapling', '')
             const currentPos = bot.entity.position.clone()
             const saplingPos = findSaplingPosition(bot, currentPos, 5)
-            if (!saplingPos) {
-              bot.chat(`⚠️ Geen ruimte meer voor saplings`)
-              break
-            }
             
-            try {
-              const movements = new Movements(bot)
-              bot.pathfinder.setMovements(movements)
-              const goal = new goals.GoalNear(saplingPos.x, saplingPos.y, saplingPos.z, 2)
-              await bot.pathfinder.goto(goal)
-              const success = await replantSapling(bot, saplingPos, treeType)
-              if (!success) break
-              planted++
-              await new Promise(r => setTimeout(r, 200))
-            } catch (e) {
-              if (bot._debug) console.log('[Wood] Sapling plant error:', e.message)
-              break
+            if (saplingPos && saplingPos.distanceTo(currentPos) < 3) {
+              try {
+                await replantSapling(bot, saplingPos, treeType)
+                planted++
+                await new Promise(r => setTimeout(r, 300))
+              } catch (e) {
+                if (bot._debug) console.log('[Wood] Sapling plant failed:', e.message)
+              }
             }
           }
         }
-        
-        const remainingSaplings = bot.inventory.items().filter(i => i.name && i.name.includes('sapling'))
-        if (remainingSaplings.length > 0) {
-          const total = remainingSaplings.reduce((sum, s) => sum + s.count, 0)
-          bot.chat(`🌱 ${total} saplings over`)
-        }
+      } catch (e) {
+        console.log('[Wood] Sapling phase error:', e.message)
       }
     }
     
@@ -440,6 +425,12 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
   }
 
   return collected
+  
+  } catch (error) {
+    console.error('[Wood] harvestWood error:', error)
+    bot.chat(`❌ Error tijdens houthakken: ${error.message}`)
+    return collected
+  }
 }
 
 module.exports = { 

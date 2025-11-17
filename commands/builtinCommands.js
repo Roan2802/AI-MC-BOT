@@ -513,6 +513,37 @@ module.exports = {
   },
 
   /**
+   * inventory - Show current inventory contents
+   */
+  async inventory(bot) {
+    try {
+      const items = bot.inventory.items()
+      if (items.length === 0) {
+        bot.chat('📦 Inventaris: Leeg!')
+        return
+      }
+      
+      bot.chat(`📦 Inventaris (${items.length} items):`)
+      
+      // Group by item type and show counts
+      const itemMap = {}
+      for (const item of items) {
+        if (!itemMap[item.name]) {
+          itemMap[item.name] = 0
+        }
+        itemMap[item.name] += item.count
+      }
+      
+      // Display grouped items
+      for (const [name, count] of Object.entries(itemMap)) {
+        bot.chat(`  • ${name}: ${count}x`)
+      }
+    } catch (e) {
+      bot.chat(`❌ Inventaris fout: ${e.message}`)
+    }
+  },
+
+  /**
    * help - Display available commands.
    * @param {object} bot
    */
@@ -527,6 +558,7 @@ module.exports = {
       '!mine [bron] - Mijn resource (standaard: oak_log)',
       '!smelt - Smelt beschikbare ertsen in oven (best-effort)',
       '!chop - Hak hout in de buurt (best-effort)',
+      '!inventory - Toon inventaris inhoud',
       '!makecharcoal - Maak charcoal van logs (gebruik oven)',
       '!mineores - Mijn meerdere ertsen (best-effort)',
       '!makestonepickaxe - Maak een stone pickaxe als mogelijk',
@@ -548,4 +580,7 @@ module.exports = {
     }
   }
 }
+
+
+
 

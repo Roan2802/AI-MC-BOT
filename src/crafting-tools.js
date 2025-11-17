@@ -102,12 +102,33 @@ async function tryCraft(bot, itemName, amount = 1, fallbackNames = []) {
       return false
     }
     
-    // Try with opened window first (for crafting table recipes)
+    // For crafting table recipes (2x2+), we MUST open the table FIRST
+    // before we can find the recipes
     let recipes = []
+    let usingCraftingTable = false
     
-    // If any crafting window is open, get recipes from current window
-    if (bot.currentWindow) {
-      console.log(`[Crafting] Window open (${bot.currentWindow.type}), searching recipes in window...`)
+    // Try to find and open crafting table FIRST (don't check recipes yet)
+    // This is necessary because table recipes only appear when window is open
+    const craftingTable = bot.findBlock({
+      matching: b => b && b.name === 'crafting_table',
+      maxDistance: 5,
+      count: 1
+    })
+    
+    if (craftingTable) {
+      console.log(`[Crafting] Found crafting table, opening for recipe lookup...`)
+      try {
+        await bot.openBlock(craftingTable)
+        console.log(`[Crafting] Table opened`)
+        usingCraftingTable = true
+      } catch (openErr) {
+        console.log(`[Crafting] Could not open table:`, openErr.message)
+      }
+    }
+    
+    // NOW try to get recipes with window open
+    if (bot.currentWindow && bot.currentWindow.type === 'minecraft:crafting') {
+      console.log(`[Crafting] Crafting table window is open, searching recipes...`)
       try {
         recipes = bot.recipesFor(item.id, null, 1, bot.currentWindow)
       } catch (e) {
@@ -135,22 +156,12 @@ async function tryCraft(bot, itemName, amount = 1, fallbackNames = []) {
       }
     }
     
-    // If recipe requires table, we need to pass it to bot.craft
-    if (recipes[0] && recipes[0].requiresTable) {
-      console.log(`[Crafting] Recipe requires crafting table, finding one...`)
-      const craftingTable = bot.findBlock({
-        matching: b => b && b.name === 'crafting_table',
-        maxDistance: 5,
-        count: 1
-      })
-      
-      if (!craftingTable) {
-        console.log(`[Crafting] No crafting table found for recipe`)
-        return false
-      }
-      
+    // Now craft with appropriate context
+    if (usingCraftingTable && craftingTable) {
+      console.log(`[Crafting] Crafting with table window open...`)
       await bot.craft(recipes[0], amount, craftingTable)
     } else {
+      console.log(`[Crafting] Crafting in inventory...`)
       await bot.craft(recipes[0], amount)
     }
     

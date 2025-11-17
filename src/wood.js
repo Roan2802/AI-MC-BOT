@@ -12,6 +12,7 @@ const { mineResource } = require('./mining.js')
 const { getBestAxe, ensureToolFor, ensureWoodenAxe } = require('./crafting-tools.js')
 const { ensureCraftingTable } = require('./crafting-blocks.js')
 const { ensureCraftingTableOpen, craftPlanksFromLogs, craftSticks } = require('./crafting-recipes.js')
+const { Vec3 } = require('vec3')
 
 
 
@@ -133,8 +134,10 @@ function findConnectedLogs(bot, startBlock, radius = 20) {
       return []
     }
     
+    console.log(`[Wood] findConnectedLogs: Starting from ${startBlock.name} at ${startBlock.position.x},${startBlock.position.y},${startBlock.position.z}`)
+    
     const visited = new Set()
-    const toVisit = [startBlock.position]
+    const toVisit = [startBlock.position.clone ? startBlock.position.clone() : new Vec3(startBlock.position.x, startBlock.position.y, startBlock.position.z)]
     const blocks = []
 
     const key = (p) => `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`
@@ -148,22 +151,33 @@ function findConnectedLogs(bot, startBlock, radius = 20) {
       visited.add(k)
       
       const b = bot.blockAt(pos)
-      if (!b || !b.name) continue
-      if (!b.name.includes('log')) continue
-      if (pos.distanceTo(origin) > radius) continue
+      if (!b || !b.name) {
+        // console.log(`[Wood] Block at ${k} is null or has no name`)
+        continue
+      }
+      if (!b.name.includes('log')) {
+        // console.log(`[Wood] Block at ${k} is ${b.name}, not a log`)
+        continue
+      }
+      if (pos.distanceTo(origin) > radius) {
+        // console.log(`[Wood] Block at ${k} is too far: ${pos.distanceTo(origin)} > ${radius}`)
+        continue
+      }
       blocks.push(b)
-
+      console.log(`[Wood] findConnectedLogs: Found log ${b.name} at ${pos.x},${pos.y},${pos.z}`)
+      
       // neighbors: up/down and 4 horizontal + diagonals for better detection
       const neighbors = [
         [1,0,0], [-1,0,0], [0,0,1], [0,0,-1], [0,1,0], [0,-1,0],
         [1,0,1], [1,0,-1], [-1,0,1], [-1,0,-1] // diagonals
       ]
       for (const n of neighbors) {
-        const np = pos.offset(n[0], n[1], n[2])
+        const np = new Vec3(pos.x + n[0], pos.y + n[1], pos.z + n[2])
         const nk = key(np)
         if (!visited.has(nk)) toVisit.push(np)
       }
     }
+    console.log(`[Wood] findConnectedLogs found ${blocks.length} connected log blocks`)
     return blocks
   } catch (e) {
     console.error('[Wood] findConnectedLogs error:', e.message)
@@ -179,81 +193,56 @@ function findConnectedLogs(bot, startBlock, radius = 20) {
  */
 async function collectNearbyItems(bot, radius = 10) {
   try {
-    // Check if pathfinder is available
-    if (!bot.pathfinder || !bot.pathfinder.goto) {
-      if (bot._debug) console.log('[Wood] Pathfinder not available, skipping item collection')
-      return
-    }
+    console.log(`[Wood] collectNearbyItems: Collecting items within ${radius} blocks...`)
     
-    const pathfinderPkg = require('mineflayer-pathfinder')
-    if (!pathfinderPkg || !pathfinderPkg.goals) {
-      console.log('[Wood] Pathfinder package not loaded properly')
-      return
-    }
-    const { goals } = pathfinderPkg
+    // Wait for items to settle
+    await new Promise(r => setTimeout(r, 500))
     
-    // Items we want to collect
-    const wantedItems = ['log', 'sapling', 'stick', 'apple', 'planks']
+    // Get all entities and filter for items
+    const allEntities = Object.values(bot.entities)
+    console.log(`[Wood] Total entities: ${allEntities.length}`)
     
-    const nearbyItems = Object.values(bot.entities).filter(e => {
-      try {
-        // Skip if no position
+    const itemEntities = allEntities
+      .filter(e => {
         if (!e || !e.position) return false
-        if (e.position.distanceTo(bot.entity.position) >= radius) return false
-        
-        // Check if entity is an item using displayName first (newer), fallback to objectType
-        let isItem = false
-        try {
-          // Try displayName first (non-deprecated)
-          isItem = e.displayName === 'Item'
-        } catch (e1) {
-          // Fallback to objectType if displayName fails
-          try {
-            isItem = e.objectType === 'item' || e.objectType === 'Item'
-          } catch (e2) {
-            // Last resort: check name
-            isItem = (e.name || '').includes('item')
-          }
-        }
-        if (!isItem) return false
-        
-        // Try to identify item type from metadata
-        if (e.metadata && e.metadata[8] && typeof e.metadata[8] === 'object') {
-          try {
-            const itemStack = e.metadata[8]
-            const itemId = itemStack.itemId || itemStack.item_id
-            if (itemId && bot.registry && bot.registry.items && bot.registry.items[itemId]) {
-              const itemName = bot.registry.items[itemId].name || ''
-              return wantedItems.some(wanted => itemName.includes(wanted))
-            }
-          } catch (parseErr) {
-            // Metadata parsing failed, skip this entity
-            return false
-          }
-        }
-        return false
-      } catch (filterErr) {
-        return false
-      }
-    })
+        // Check if entity name is 'item'
+        if (e.name !== 'item') return false
+        const dist = bot.entity.position.distanceTo(e.position)
+        return dist <= radius
+      })
+      .sort((a, b) => {
+        const distA = bot.entity.position.distanceTo(a.position)
+        const distB = bot.entity.position.distanceTo(b.position)
+        return distA - distB
+      })
     
-    if (bot._debug) console.log(`[Wood] Found ${nearbyItems.length} items to collect`)
+    console.log(`[Wood] Found ${itemEntities.length} collectible items nearby`)
     
-    for (const item of nearbyItems) {
+    // Collect each item by moving to it
+    for (const itemEntity of itemEntities) {
       try {
-        const dist = bot.entity.position.distanceTo(item.position)
-        if (dist > 2) {
-          const goal = new goals.GoalNear(item.position.x, item.position.y, item.position.z, 1)
-          await bot.pathfinder.goto(goal)
-        }
-        await new Promise(r => setTimeout(r, 200)) // Let auto-pickup work
-      } catch (e) {
-        // Item may already be picked up or despawned
-        if (bot._debug) console.log('[Wood] Item collection error:', e.message)
+        if (!itemEntity || !itemEntity.position) continue
+        
+        const dist = bot.entity.position.distanceTo(itemEntity.position)
+        console.log(`[Wood] Moving to item at distance ${dist.toFixed(2)}...`)
+        
+        // Use pathfinder to move to item
+        const targetPos = itemEntity.position.clone()
+        await bot.pathfinder.goto(targetPos)
+        
+        // Wait for pickup
+        await new Promise(r => setTimeout(r, 1500))
+      } catch (pathErr) {
+        console.log('[Wood] Could not path to item:', pathErr.message)
+        // Continue to next item
       }
     }
+    
+    console.log('[Wood] Item collection window complete')
+    return
   } catch (e) {
-    if (bot._debug) console.log('[Wood] Collect items failed:', e.message)
+    console.error('[Wood] collectNearbyItems error:', e.message)
+    return
   }
 }
 
@@ -397,7 +386,7 @@ async function createPathWithBlocks(bot, targetPos) {
           const dirt = bot.inventory.items().find(it => it && it.name === 'dirt')
           if (dirt) {
             await bot.equip(dirt, 'hand')
-            await bot.placeBlock(blockBelow, new bot.Vec3(0, 1, 0))
+            await bot.placeBlock(blockBelow, new Vec3(0, 1, 0))
             await new Promise(r => setTimeout(r, 100))
           }
         } catch (e) {
@@ -461,21 +450,45 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
       if (!logs || logs.count === 0) {
         console.log('[Wood] - No logs to start with, finding first tree...')
         
-        // Find nearby logs
-        const logBlock = bot.findBlock({
-          matching: b => b && b.name && b.name.includes('log'),
-          maxDistance: 20,
-          count: 1
-        })
+        // Find nearby logs - use progressively larger search radius
+        let logBlock = null
+        const searchDistances = [20, 40, 100, 150, 200]
+        
+        for (const searchDist of searchDistances) {
+          console.log(`[Wood] - Searching for initial logs within ${searchDist} blocks...`)
+          logBlock = bot.findBlock({
+            matching: b => b && b.name && b.name.includes('log'),
+            maxDistance: searchDist,
+            count: 1
+          })
+          
+          if (logBlock) {
+            console.log(`[Wood] - Found tree at distance ${bot.entity.position.distanceTo(logBlock.position)}: ${logBlock.position}`)
+            break
+          }
+        }
         
         if (logBlock) {
-          console.log('[Wood] - Found tree at', logBlock.position, ', mining first log...')
+          console.log('[Wood] - Mining first log...')
           try {
+            // First, MOVE to the log location so items drop near us
+            const logPos = logBlock.position
+            const botPos = bot.entity.position
+            const dist = botPos.distanceTo(logPos)
+            
+            if (dist > 3) {
+              console.log(`[Wood] - Moving to log at distance ${dist.toFixed(1)}...`)
+              await bot.pathfinder.goto(new Vec3(logPos.x, logPos.y, logPos.z))
+              console.log('[Wood] - Reached log location')
+            }
+            
+            // Now dig from close distance
+            console.log('[Wood] - Digging log...')
             await bot.dig(logBlock)
             console.log('[Wood] - Dig complete, waiting for items...')
             await new Promise(r => setTimeout(r, 1500))  // Wait for drops to appear
             
-            // Collect items that dropped
+            // Collect items that dropped nearby
             await collectNearbyItems(bot, 10)
             await new Promise(r => setTimeout(r, 500))
             
@@ -485,7 +498,7 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
             console.log('[Wood] - Could not mine first log:', e.message)
           }
         } else {
-          console.log('[Wood] - No logs found nearby within 20 blocks')
+          console.log('[Wood] - No logs found nearby even after searching up to 200 blocks')
         }
       }
       
@@ -581,8 +594,12 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
     }
 
     // Continue until we reach maxBlocks or no more trees found
-    while (collected < maxBlocks) {
-      console.log(`[Wood] Loop iteration - collected: ${collected}/${maxBlocks}`)
+    let loopIterations = 0
+    const maxLoopIterations = 50 // Safety limit
+    
+    while (collected < maxBlocks && loopIterations < maxLoopIterations) {
+      loopIterations++
+      console.log(`[Wood] Loop iteration ${loopIterations} - collected: ${collected}/${maxBlocks}`)
       
       console.log('[Wood] STEP 1: Check axe')
       console.log('[Wood] About to call getBestAxe...')
@@ -619,21 +636,35 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
       }
       
       console.log('[Wood] STEP 3: Find tree')
-      // STEP 3: Find nearest log block
+      // STEP 3: Find nearest log block - use much larger search radius
       let logBlock
       try {
-        logBlock = bot.findBlock({
-          matching: b => {
-            try {
-              return b && b.name && b.name.includes('log')
-            } catch (e) {
-              return false
-            }
-          },
-          maxDistance: radius,
-          count: 1
-        })
-        console.log('[Wood] Log block found:', logBlock ? logBlock.name : 'null')
+        // Try progressively larger search distances
+        const searchDistances = [radius, radius * 2, 100, 150, 200]
+        
+        for (const searchDist of searchDistances) {
+          console.log(`[Wood] Searching for logs within ${searchDist} blocks...`)
+          logBlock = bot.findBlock({
+            matching: b => {
+              try {
+                return b && b.name && b.name.includes('log')
+              } catch (e) {
+                return false
+              }
+            },
+            maxDistance: searchDist,
+            count: 1
+          })
+          
+          if (logBlock) {
+            console.log(`[Wood] Log block found at distance ${bot.entity.position.distanceTo(logBlock.position)}: ${logBlock.name}`)
+            break
+          }
+        }
+        
+        if (!logBlock) {
+          console.log('[Wood] Log block search failed after all attempts')
+        }
       } catch (findErr) {
         console.error('[Wood] Error finding log:', findErr.message)
         logBlock = null
@@ -664,8 +695,8 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
       }
       
       if (!cluster || cluster.length === 0) {
-        console.log('[Wood] Empty cluster, breaking')
-        break
+        console.log('[Wood] Empty cluster, trying next tree...')
+        continue
       }
 
       console.log('[Wood] Cluster has', cluster.length, 'logs')

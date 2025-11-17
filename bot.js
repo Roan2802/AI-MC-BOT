@@ -1,12 +1,12 @@
-import mineflayer from 'mineflayer'
-import initCommandRouter from './commands/commandRouter.js'
-import { setupPathfinder } from './src/movement.js'
+const mineflayer = require('mineflayer');
+const initCommandRouter = require('./commands/commandRouter.js');
+const { setupPathfinder } = require('./src/movement.js');
 const bot = mineflayer.createBot({
   host: 'localhost',
   port: 25565,
   username: 'Agent01'
 })
-import { initCombatSystem } from './src/combat.js'
+const { initCombatSystem } = require('./src/combat.js');
 
 bot.on('spawn', () => {
   console.log('[Agent01] Bot spawned!')

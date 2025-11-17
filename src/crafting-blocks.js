@@ -26,7 +26,7 @@ async function placeCraftingTable(bot) {
     }
     
     await bot.equip(craftingTable, 'hand')
-    await bot.placeBlock(groundBlock, new bot.Vec3(1, 0, 0))
+    await bot.placeBlock(groundBlock, { x: 0, y: 1, z: 0 })
     console.log('[Crafting] Crafting table placed')
     await new Promise(r => setTimeout(r, 300))
     return true
@@ -56,7 +56,7 @@ async function placeFurnace(bot) {
     }
     
     await bot.equip(furnace, 'hand')
-    await bot.placeBlock(groundBlock, new bot.Vec3(1, 0, 0))
+    await bot.placeBlock(groundBlock, { x: 0, y: 1, z: 0 })
     console.log('[Crafting] Furnace placed')
     await new Promise(r => setTimeout(r, 300))
     return true

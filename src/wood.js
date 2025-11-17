@@ -86,7 +86,7 @@ async function plantAllSaplings(bot, radius = 25) {
                   // Plant the sapling
                   try {
                     await bot.equip(sapling, 'hand')
-                    await bot.placeBlock(groundBlock, new bot.Vec3(0, 1, 0))
+                    await bot.placeBlock(groundBlock, { x: 0, y: 1, z: 0 })
                     planted++
                     console.log(`[Wood] Sapling ${planted} planted at ${checkX}, ${checkY}, ${checkZ}`)
                     await new Promise(r => setTimeout(r, 150))
@@ -321,7 +321,7 @@ async function replantSapling(bot, position, treeType = 'oak') {
     const blockBelow = bot.blockAt(position.offset(0, -1, 0))
     
     if (blockBelow && (blockBelow.name === 'dirt' || blockBelow.name === 'grass_block' || blockBelow.name === 'podzol')) {
-      await bot.placeBlock(blockBelow, new bot.Vec3(0, 1, 0))
+      await bot.placeBlock(blockBelow, { x: 0, y: 1, z: 0 })
       bot.chat(`🌱 Sapling herplant op ${Math.floor(position.x)}, ${Math.floor(position.z)}`)
       return true
     }

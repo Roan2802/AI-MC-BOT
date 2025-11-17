@@ -456,30 +456,39 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
     bot.chat('🔨 Gereedschap voorbereiden...')
     
     try {
-      // 1. Ensure crafting table exists
+      // 1. Check logs first
+      let logs = bot.inventory.items().find(i => i && i.name && i.name.includes('log'))
+      console.log(`[Wood] - Starting inventory: logs=${logs ? logs.count : 0}`)
+      
+      // 2. Craft planks from logs if we have them
+      if (logs && logs.count >= 1) {
+        console.log('[Wood] - Found logs, crafting planks...')
+        await craftPlanksFromLogs(bot, Math.min(logs.count, 10))
+        await new Promise(r => setTimeout(r, 500))
+      }
+      
+      // 3. Check planks after crafting
+      let planks = bot.inventory.items().find(i => i && i.name && i.name.includes('planks'))
+      console.log(`[Wood] - After craft: planks=${planks ? planks.count : 0}`)
+      
+      // 4. Ensure crafting table exists (will craft it if needed)
       console.log('[Wood] - Crafting table checken...')
       const hasTable = await ensureCraftingTable(bot)
       if (hasTable) {
         console.log('[Wood] - ✅ Crafting table available')
+      } else {
+        console.log('[Wood] - ⚠️ Could not get/make crafting table')
       }
       
-      // 2. Check logs and craft planks if needed
-      const logs = bot.inventory.items().find(i => i && i.name && i.name.includes('log'))
-      if (logs) {
-        console.log('[Wood] - Found logs, crafting planks...')
-        await craftPlanksFromLogs(bot, Math.min(logs.count, 10))
-        await new Promise(r => setTimeout(r, 300))
-      }
-      
-      // 3. Check planks and craft sticks if needed
-      const planks = bot.inventory.items().find(i => i && i.name && i.name.includes('planks'))
+      // 5. Re-check planks after table creation
+      planks = bot.inventory.items().find(i => i && i.name && i.name.includes('planks'))
       if (planks && planks.count >= 2) {
         console.log('[Wood] - Found planks, crafting sticks...')
         await craftSticks(bot, Math.min(Math.floor(planks.count / 2), 10))
         await new Promise(r => setTimeout(r, 300))
       }
       
-      // 4. Craft axe if needed
+      // 6. Craft axe if needed
       const hasAxe = getBestAxe(bot)
       if (!hasAxe) {
         console.log('[Wood] - No axe, crafting one...')

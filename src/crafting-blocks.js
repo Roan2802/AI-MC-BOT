@@ -95,11 +95,34 @@ async function ensureCraftingTable(bot) {
       return true
     }
     
-    // Try to place one
-    const planks = bot.inventory.items().find(i => i && i.name && i.name.includes('planks'))
+    // Try to get/make planks for crafting table
+    let planks = bot.inventory.items().find(i => i && i.name && i.name.includes('planks'))
     if (!planks || planks.count < 4) {
-      console.log('[Crafting] Not enough planks for crafting table')
-      return false
+      // Try to craft planks from logs
+      const logs = bot.inventory.items().find(i => i && i.name && i.name.includes('log'))
+      if (!logs || logs.count < 1) {
+        console.log('[Crafting] Not enough logs or planks for crafting table')
+        return false
+      }
+      
+      console.log('[Crafting] Crafting planks from logs for crafting table...')
+      try {
+        const plankType = logs.name.replace('_log', '_planks')
+        const plankItemId = bot.registry.itemsByName[plankType]
+        
+        if (plankItemId && typeof plankItemId.id === 'number') {
+          const recipes = bot.recipesFor(plankItemId.id, null, 1, null)
+          if (recipes && recipes.length > 0) {
+            // Craft enough planks (4 needed for table)
+            await bot.craft(recipes[0], 1)
+            console.log('[Crafting] Crafted planks')
+            await new Promise(r => setTimeout(r, 200))
+          }
+        }
+      } catch (e) {
+        console.log('[Crafting] Failed to craft planks:', e.message)
+        return false
+      }
     }
     
     console.log('[Crafting] Crafting table not found, crafting one...')
@@ -107,22 +130,27 @@ async function ensureCraftingTable(bot) {
     // Craft crafting table
     try {
       const tableItemId = bot.registry.itemsByName['crafting_table']
-      if (tableItemId && typeof tableItemId.id === 'number') {
-        const recipes = bot.recipesFor(tableItemId.id, null, 1, null)
-        if (recipes && recipes.length > 0) {
-          await bot.craft(recipes[0], 1)
-          console.log('[Crafting] Crafting table crafted')
-          await new Promise(r => setTimeout(r, 300))
-          
-          // Place it
-          return await placeCraftingTable(bot)
-        }
+      if (!tableItemId || typeof tableItemId.id !== 'number') {
+        console.log('[Crafting] Crafting table not in registry')
+        return false
       }
+      
+      const recipes = bot.recipesFor(tableItemId.id, null, 1, null)
+      if (!recipes || recipes.length === 0) {
+        console.log('[Crafting] No recipe for crafting table')
+        return false
+      }
+      
+      await bot.craft(recipes[0], 1)
+      console.log('[Crafting] Crafting table crafted')
+      await new Promise(r => setTimeout(r, 300))
+      
+      // Place it
+      return await placeCraftingTable(bot)
     } catch (e) {
       console.log('[Crafting] Failed to craft table:', e.message)
+      return false
     }
-    
-    return false
   } catch (e) {
     console.error('[Crafting] ensureCraftingTable error:', e.message)
     return false

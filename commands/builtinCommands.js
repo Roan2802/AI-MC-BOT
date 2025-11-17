@@ -176,23 +176,17 @@ module.exports = {
   },
 
   /**
-   * chop - Harvest nearby wood with replanting and auto-craft options
+   * chop - Harvest nearby wood with simplified workflow: find tree → navigate → check/craft axe → chop completely → collect → stop when inventory full
    * @param {object} bot
    * @param {string} count - Number of logs to harvest
-   * @param {string} options - 'planks' or 'sticks' to auto-craft
    */
-  async chop(bot, count = '32', options = '') {
+  async chop(bot, count = '32') {
     const n = parseInt(count, 10) || 32
-    const opts = {
-      replant: true,
-      craftPlanks: options.includes('plank'),
-      craftSticks: options.includes('stick')
-    }
     
     try {
-      bot.chat(`🌲 Start houthakken... (${n} logs)`)
+      bot.chat(`🌲 Start houthakken... (${n} logs - simplified workflow)`)
       console.log('[Chop] Starting harvestWood with', n, 'logs')
-      const got = await harvestWood(bot, 20, n, opts)
+      const got = await harvestWood(bot, 20, n)
       console.log('[Chop] harvestWood completed, got', got, 'logs')
       bot.chat(`✅ Klaar: ${got} logs verzameld`)
     } catch (e) {

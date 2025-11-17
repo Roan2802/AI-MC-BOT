@@ -1,7 +1,4 @@
-/**
- * Tool Crafting Module
- * Handles creation of axes, pickaxes and tool validation
- */
+const { ensureCraftingTableOpen } = require('./crafting-recipes.js')
 
 /**
  * Check if bot has pickaxe
@@ -208,14 +205,42 @@ async function ensureWoodenAxe(bot) {
   const planks = bot.inventory.items().find(i => i.name && i.name.includes('planks'))
   const sticks = bot.inventory.items().find(i => i.name === 'stick')
   
+  console.log(`[Crafting] Axe materials: planks=${planks ? planks.count : 0}, sticks=${sticks ? sticks.count : 0}`)
+  
   if (!planks || planks.count < 3 || !sticks || sticks.count < 2) {
     console.log('[Crafting] Insufficient materials for axe')
     return false
   }
   
   try {
-    // Try wooden_axe first, then fallback names
-    return await tryCraft(bot, 'wooden_axe', 1, ['axe', 'oak_axe'])
+    // Check if crafting table window is already open
+    if (bot.currentWindow && bot.currentWindow.type === 'minecraft:crafting') {
+      console.log('[Crafting] Crafting table window already open, proceeding with craft...')
+    } else {
+      console.log('[Crafting] Crafting table window not open, opening...')
+      const opened = await ensureCraftingTableOpen(bot)
+      if (!opened) {
+        console.log('[Crafting] Could not open crafting table for axe')
+        return false
+      }
+    }
+    
+    // Now craft the axe directly
+    const axeItem = bot.registry.itemsByName['wooden_axe']
+    if (!axeItem) {
+      console.log('[Crafting] Wooden axe not found in registry')
+      return false
+    }
+    
+    const recipes = bot.recipesFor(axeItem.id, null, 1, bot.currentWindow)
+    if (!recipes || recipes.length === 0) {
+      console.log('[Crafting] No recipes found for wooden axe')
+      return false
+    }
+    
+    await bot.craft(recipes[0], 1, bot.currentWindow)
+    console.log('[Crafting] Wooden axe crafted successfully')
+    return true
   } catch (e) {
     console.error('[Crafting] Wooden axe craft failed:', e.message)
     return false

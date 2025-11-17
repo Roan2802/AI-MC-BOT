@@ -269,15 +269,21 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
       // TODO: Re-enable after fixing crash
       
       console.log('[Wood] STEP 2: Check axe')
+      console.log('[Wood] About to call getBestAxe...')
       
       // STEP 2: Check if we have an axe, try to craft one if we have materials
       const currentAxe = getBestAxe(bot)
+      console.log('[Wood] getBestAxe returned:', currentAxe ? currentAxe.name : 'null')
     
+    console.log('[Wood] Checking if need to craft axe...')
     if (!currentAxe) {
+      console.log('[Wood] No axe found, checking materials...')
       // Try to craft axe if we have enough materials
       const hasLogs = bot.inventory.items().find(i => i.name && i.name.includes('log'))
       const hasPlanks = bot.inventory.items().find(i => i.name && i.name.includes('planks'))
       const hasSticks = bot.inventory.items().find(i => i.name === 'stick')
+      
+      console.log('[Wood] Materials check:', { hasLogs: !!hasLogs, hasPlanks: !!hasPlanks, hasSticks: !!hasSticks })
       
       // Only try to craft if we have some materials (at least logs or planks+sticks)
       if ((hasLogs && hasLogs.count >= 2) || (hasPlanks && hasPlanks.count >= 3 && hasSticks && hasSticks.count >= 2)) {

@@ -235,10 +235,28 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
           await bot.pathfinder.goto(goal)
         }
 
-        // Dig the block
+        // Dig the block and wait for drops
         await bot.dig(block, true)
         collected++
-        await new Promise(r => setTimeout(r, 200)) // Small delay for drops
+        
+        // Wait longer for items to spawn (Minecraft delay)
+        await new Promise(r => setTimeout(r, 800))
+        
+        // Collect nearby items (logs, saplings, sticks, etc.)
+        const nearbyItems = Object.values(bot.entities).filter(e => 
+          e.objectType === 'Item' && 
+          e.position.distanceTo(bot.entity.position) < 8
+        )
+        
+        for (const item of nearbyItems) {
+          try {
+            const goal = new goals.GoalNear(item.position.x, item.position.y, item.position.z, 1)
+            await bot.pathfinder.goto(goal)
+            await new Promise(r => setTimeout(r, 100)) // Let auto-pickup work
+          } catch (e) {
+            // Item may already be picked up or despawned
+          }
+        }
       } catch (e) {
         if (bot._debug) console.log('[Wood] Dig failed:', e.message)
       }

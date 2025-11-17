@@ -363,40 +363,41 @@ async function placeCraftingTable(bot) {
     const tableItem = bot.inventory.items().find(i => i.name === 'crafting_table')
     if (!tableItem) return false
 
-    // Try to place table NEXT TO bot, not under bot
-    // Check positions around bot (1 block away horizontally)
-    const directions = [
-      [1, 0, 0],   // East
-      [-1, 0, 0],  // West
-      [0, 0, 1],   // South
-      [0, 0, -1],  // North
-      [1, 0, 1],   // Southeast
-      [-1, 0, 1],  // Southwest
-      [1, 0, -1],  // Northeast
-      [-1, 0, -1]  // Northwest
+    // Try to find a suitable place around bot
+    // First check horizontal positions, then try different heights if needed
+    const attempts = [
+      // Ground level (same Y as bot)
+      [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1],
+      [1, 0, 1], [-1, 0, 1], [1, 0, -1], [-1, 0, -1],
+      [2, 0, 0], [-2, 0, 0], [0, 0, 2], [0, 0, -2],
+      // One block higher
+      [1, 1, 0], [-1, 1, 0], [0, 1, 1], [0, 1, -1],
+      // One block lower
+      [1, -1, 0], [-1, -1, 0], [0, -1, 1], [0, -1, -1],
     ]
     
-    for (const dir of directions) {
-      const targetPos = bot.entity.position.offset(dir[0], 0, dir[2])
+    for (const [dx, dy, dz] of attempts) {
+      const targetPos = bot.entity.position.offset(dx, dy, dz)
       const targetBlock = bot.blockAt(targetPos)
       const blockBelow = bot.blockAt(targetPos.offset(0, -1, 0))
       
       // Check if position is air and has solid block below
       if (targetBlock && targetBlock.name === 'air' && 
-          blockBelow && blockBelow.name !== 'air') {
+          blockBelow && blockBelow.name !== 'air' && !blockBelow.name.includes('sapling')) {
         try {
           await bot.equip(tableItem, 'hand')
           await bot.placeBlock(blockBelow, new bot.Vec3(0, 1, 0))
-          bot.chat('📋 Crafting table geplaatst naast bot')
+          bot.chat(`📋 Crafting table geplaatst bij [${Math.floor(targetPos.x)}, ${Math.floor(targetPos.y)}, ${Math.floor(targetPos.z)}]`)
           return true
         } catch (e) {
-          // Try next direction if this one fails
+          // Try next position if this one fails
+          if (bot._debug) console.log(`[Crafting] Failed to place at ${dx},${dy},${dz}: ${e.message}`)
           continue
         }
       }
     }
     
-    bot.chat('⚠️ Geen ruimte om crafting table te plaatsen')
+    bot.chat('⚠️ Geen ruimte gevonden om crafting table te plaatsen, zoek meer open ruimte')
     return false
   } catch (e) {
     console.warn('[Crafting] placeCraftingTable failed:', e && e.message)

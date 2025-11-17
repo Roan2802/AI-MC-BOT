@@ -92,6 +92,9 @@ async function collectNearbyItems(bot, radius = 10) {
     if (bot._debug) console.log('[Wood] Collect items failed:', e.message)
   }
 }
+
+/**
+ * Find suitable position for sapling replanting with 4-block spacing
  * @param {import('mineflayer').Bot} bot
  * @param {Vec3} basePos - Base position of tree
  * @param {number} radius

@@ -5,9 +5,9 @@
  * Maintains in-memory cache via WeakMap for current session.
  */
 
-import fs from 'fs'
-import path from 'path'
-import { goTo } from './navigation.js'
+const fs = require('fs');
+const path = require('path');
+const { goTo } = require('./navigation.js');
 
 const homes = new WeakMap()
 const dataDir = path.resolve(process.cwd(), 'data')
@@ -30,7 +30,7 @@ function ensureDataDir() {
  * @param {object} bot - Mineflayer bot instance
  * @throws {Error} If position data unavailable
  */
-export function setHome(bot) {
+function setHome(bot) {
   try {
     const pos = bot.entity.position
     const simple = { x: pos.x, y: pos.y, z: pos.z }
@@ -51,7 +51,7 @@ export function setHome(bot) {
  * @returns {object|null} Position {x, y, z} or null if no home set
  * @throws {Error} If file parse fails critically
  */
-export function getHome(bot) {
+function getHome(bot) {
   // Check in-memory cache first
   if (homes.has(bot)) {
     return homes.get(bot)
@@ -80,7 +80,7 @@ export function getHome(bot) {
  * @returns {Promise<void>}
  * @throws {Error} If no home set or movement fails
  */
-export function goHome(bot) {
+function goHome(bot) {
   const pos = getHome(bot)
   if (!pos) {
     throw new Error('Geen thuis ingesteld')
@@ -90,4 +90,4 @@ export function goHome(bot) {
   return goTo(bot, pos, { timeout: 45000, maxRetries: 3 })
 }
 
-export default { setHome, getHome, goHome }
+module.exports = { setHome, getHome, goHome };

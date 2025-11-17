@@ -5,8 +5,8 @@
  * and collect the results when finished. Best-effort implementation.
  */
 
-import { Vec3 } from 'vec3'
-import { ensureFurnace, ensureFuel } from './crafting.js'
+const { Vec3 } = require('vec3')
+const { ensureFurnace, ensureFuel } = require('./crafting.js')
 
 /**
  * Find nearest furnace block within radius.
@@ -37,7 +37,7 @@ function findFurnace(bot, radius = 20) {
  * @param {number} [radius=20]
  * @returns {Promise<{smelted: number, failed: number}>}
  */
-export async function smeltOres(bot, radius = 20) {
+async function smeltOres(bot, radius = 20) {
   let furnaceBlock = findFurnace(bot, radius)
   if (!furnaceBlock) {
     bot.chat('Geen oven gevonden — probeer te craften/plaatsen...')
@@ -142,7 +142,7 @@ export async function smeltOres(bot, radius = 20) {
  * @param {number} [radius=20]
  * @returns {Promise<number>} number of dried_kelp collected
  */
-export async function createDriedKelp(bot, kelpToUse = 16, radius = 20) {
+async function createDriedKelp(bot, kelpToUse = 16, radius = 20) {
   let furnaceBlock = findFurnace(bot, radius)
   if (!furnaceBlock) {
     bot.chat('Geen oven gevonden — probeer te craften/plaatsen...')
@@ -218,7 +218,7 @@ export async function createDriedKelp(bot, kelpToUse = 16, radius = 20) {
  * @param {import('mineflayer').Bot} bot
  * @returns {Promise<boolean>} true if crafted
  */
-export async function createDriedKelpBlock(bot) {
+async function createDriedKelpBlock(bot) {
   try {
     const recipes = bot.recipesAll ? bot.recipesAll('dried_kelp_block') : bot.recipesFor('dried_kelp_block', null, 1)
     if (!recipes || recipes.length === 0) return false
@@ -240,7 +240,7 @@ export async function createDriedKelpBlock(bot) {
  * Job queue for bulk fuel production and smelting tasks.
  * Tracks pending jobs, current state, and provides pause/resume.
  */
-export class FuelJobQueue {
+class FuelJobQueue {
   constructor() {
     this.jobs = [] // array of { type: 'charcoal'|'kelp'|'kelpblock'|'smelt', amount, status }
     this.running = false
@@ -256,7 +256,7 @@ export class FuelJobQueue {
     this.jobs.push({ type, amount, status: 'pending', result: 0 })
   }
 
-  /**
+function getJobQueue() {
    * Execute all pending jobs sequentially (best-effort).
    * @param {import('mineflayer').Bot} bot
    * @returns {Promise<Array>} array of job results
@@ -340,7 +340,7 @@ export function getJobQueue() {
  * @param {import('mineflayer').Bot} bot
  * @returns {FuelJobQueue} pre-populated queue
  */
-export function buildSmartFuelPlan(bot) {
+function buildSmartFuelPlan(bot) {
   const queue = new FuelJobQueue()
   const items = bot.inventory.items()
   const logCount = items.reduce((sum, i) => sum + (i.name && i.name.includes('log') ? i.count : 0), 0)
@@ -371,7 +371,7 @@ export function buildSmartFuelPlan(bot) {
   return queue
 }
 
-export default { smeltOres, createCharcoal, createDriedKelp, createDriedKelpBlock, FuelJobQueue, getJobQueue, buildSmartFuelPlan }
+// ...existing code...
 
 
 /**
@@ -382,7 +382,7 @@ export default { smeltOres, createCharcoal, createDriedKelp, createDriedKelpBloc
  * @returns {Promise<number>} number of charcoal collected
  */
 export async function createCharcoal(bot, logsToUse = 8, radius = 20) {
-  const furnaceBlock = findFurnace(bot, radius)
+function getJobQueue() {
   if (!furnaceBlock) {
     bot.chat('Geen oven gevonden — probeer te craften/plaatsen...')
     const ok = await ensureFurnace(bot)
@@ -393,7 +393,7 @@ export async function createCharcoal(bot, logsToUse = 8, radius = 20) {
   }
 
   let furnace = null
-  try {
+    module.exports = { smeltOres, createDriedKelp, createDriedKelpBlock, FuelJobQueue, getJobQueue, buildSmartFuelPlan, createCharcoal };
     furnace = await (bot.openFurnace ? bot.openFurnace(furnaceBlock || findFurnace(bot, radius)) : bot.openContainer(furnaceBlock || findFurnace(bot, radius)))
   } catch (e) {
     furnace = await bot.openContainer(furnaceBlock || findFurnace(bot, radius))

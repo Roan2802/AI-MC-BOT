@@ -2,7 +2,7 @@
  * Simple mining helper using mineflayer
  */
 
-export async function mineNearestBlock(bot, blockName, radius = 20) {
+async function mineNearestBlock(bot, blockName, radius = 20) {
   const pos = bot.entity.position
   let nearest = null
   let nearestDist = Infinity
@@ -68,4 +68,4 @@ export async function mineNearestBlock(bot, blockName, radius = 20) {
   })
 }
 
-export default { mineNearestBlock }
+module.exports = { mineNearestBlock };

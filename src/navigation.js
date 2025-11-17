@@ -5,9 +5,9 @@
  * Wraps pathfinder with error handling and optional safety validation.
  */
 
-import pathfinderPkg from 'mineflayer-pathfinder'
+const pathfinderPkg = require('mineflayer-pathfinder')
 const { Movements, goals } = pathfinderPkg
-import { isPositionSafe } from '../utils/safety.js'
+const { isPositionSafe } = require('../utils/safety.js')
 
 /**
  * Navigate to a position with retry and timeout logic.
@@ -18,7 +18,7 @@ import { isPositionSafe } from '../utils/safety.js'
  * @returns {Promise<boolean>} True if reached, false if timeout
  * @throws {Error} If position invalid
  */
-export async function goTo(bot, position, opts = {}) {
+async function goTo(bot, position, opts = {}) {
   const timeout = opts.timeout || 30000
   const maxRetries = opts.maxRetries || 3
   const checkSafety = opts.checkSafety !== false
@@ -82,7 +82,7 @@ export async function goTo(bot, position, opts = {}) {
  * @param {array} targets - Array of positions [{x, y, z}, ...]
  * @returns {object|null} Safest target or null if none safe
  */
-export function selectSafeTarget(bot, targets) {
+function selectSafeTarget(bot, targets) {
   if (!targets || targets.length === 0) return null
 
   const safeCandidates = targets.filter(t => {
@@ -106,4 +106,4 @@ export function selectSafeTarget(bot, targets) {
   return safeCandidates[0]
 }
 
-export default { goTo, selectSafeTarget }
+module.exports = { goTo, selectSafeTarget }

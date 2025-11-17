@@ -4,21 +4,21 @@
  * Tests: safety, combat, commands, imports/exports.
  */
 
-import assert from 'assert'
-import * as safety from '../utils/safety.js'
-import * as combat from '../src/combat.js'
-import * as combatEnhanced from '../src/combatEnhanced.js'
-import * as movement from '../src/movement.js'
-import * as mining from '../src/mining.js'
-import * as crafting from '../src/crafting.js'
-import * as memory from '../src/memory.js'
-import * as navigation from '../src/navigation.js'
-import * as storage from '../src/storage.js'
-import * as smelting from '../src/smelting.js'
-import * as wood from '../src/wood.js'
-import * as automation from '../src/automation.js'
-import builtin from '../commands/builtinCommands.js'
-import initCommandRouter from '../commands/commandRouter.js'
+const assert = require('assert');
+const safety = require('../utils/safety.js');
+const combat = require('../src/combat.js');
+const combatEnhanced = require('../src/combatEnhanced.js');
+const movement = require('../src/movement.js');
+const mining = require('../src/mining.js');
+const crafting = require('../src/crafting.js');
+const memory = require('../src/memory.js');
+const navigation = require('../src/navigation.js');
+const storage = require('../src/storage.js');
+const smelting = require('../src/smelting.js');
+const wood = require('../src/wood.js');
+const automation = require('../src/automation.js');
+const builtin = require('../commands/builtinCommands.js');
+const initCommandRouter = require('../commands/commandRouter.js');
 
 let testCount = 0
 let passCount = 0

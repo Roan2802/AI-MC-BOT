@@ -4,7 +4,7 @@
  * Provide a simple routine to return home and store or drop collected items.
  */
 
-import { goHome } from './memory.js'
+const { goHome } = require('./memory.js');
 
 /**
  * Return to home and store inventory.
@@ -13,7 +13,7 @@ import { goHome } from './memory.js'
  * @param {import('mineflayer').Bot} bot
  * @returns {Promise<void>}
  */
-export async function returnHomeAndStore(bot) {
+async function returnHomeAndStore(bot) {
   try {
     const arrived = await goHome(bot)
     if (!arrived) {
@@ -106,4 +106,4 @@ export async function returnHomeAndStore(bot) {
   }
 }
 
-export default { returnHomeAndStore }
+module.exports = { returnHomeAndStore };

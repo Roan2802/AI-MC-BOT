@@ -101,7 +101,7 @@ Retourneer JSON-array: [{"cmd":"follow","args":["username"]}, ...]`
  * @returns {Promise<array|null>} Array of intents or null if unclear
  * @throws {Error} Only if unexpected errors occur
  */
-export async function parseIntent(message, username) {
+async function parseIntent(message, username) {
   if (USE_OLLAMA) {
     const result = await callOllama(message, username)
     if (result && Array.isArray(result) && result.length > 0) return result
@@ -109,5 +109,5 @@ export async function parseIntent(message, username) {
   return ruleBasedParse(message, username)
 }
 
-export default { parseIntent }
+module.exports = { parseIntent };
 

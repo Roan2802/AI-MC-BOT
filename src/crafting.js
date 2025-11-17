@@ -6,15 +6,15 @@
  * conservative and aims to work with common inventories (logs -> planks -> crafting_table -> wooden_pickaxe).
  */
 
-import fs from 'fs'
-import { Vec3 } from 'vec3'
+const fs = require('fs')
+const { Vec3 } = require('vec3')
 
 /**
  * Check whether the bot already has any pickaxe in inventory.
  * @param {import('mineflayer').Bot} bot
  * @returns {boolean}
  */
-export function hasPickaxe(bot) {
+function hasPickaxe(bot) {
   const items = bot.inventory.items()
   return items.some(i => i.name && i.name.includes('pickaxe'))
 }
@@ -29,7 +29,7 @@ export function hasPickaxe(bot) {
  * @param {number} amount
  * @returns {Promise<boolean>} true if crafted
  */
-export async function tryCraft(bot, itemName, amount = 1) {
+async function tryCraft(bot, itemName, amount = 1) {
   try {
     // recipesFor accepts itemId or item name
     const recipes = bot.recipesAll ? bot.recipesAll(itemName) : bot.recipesFor(itemName, null, 1)
@@ -106,7 +106,7 @@ export async function tryCraft(bot, itemName, amount = 1) {
  * @param {import('mineflayer').Bot} bot
  * @returns {Promise<boolean>} true if a pickaxe is available after the call
  */
-export async function ensureWoodenPickaxe(bot) {
+async function ensureWoodenPickaxe(bot) {
   if (hasPickaxe(bot)) return true
 
   // Try to craft wooden_pickaxe
@@ -140,7 +140,7 @@ export async function ensureWoodenPickaxe(bot) {
  * @param {import('mineflayer').Bot} bot
  * @returns {boolean}
  */
-export function hasAxe(bot) {
+function hasAxe(bot) {
   const items = bot.inventory.items()
   return items.some(i => i.name && i.name.includes('axe'))
 }
@@ -150,7 +150,7 @@ export function hasAxe(bot) {
  * @param {import('mineflayer').Bot} bot
  * @returns {Promise<boolean>}
  */
-export async function ensureWoodenAxe(bot) {
+async function ensureWoodenAxe(bot) {
   if (hasAxe(bot)) return true
   try {
     const success = await tryCraft(bot, 'wooden_axe', 1)
@@ -167,7 +167,7 @@ export async function ensureWoodenAxe(bot) {
  * @param {string} task - 'wood'|'stone' etc.
  * @returns {Promise<boolean>} true if suitable tool is available
  */
-export async function ensureToolFor(bot, task) {
+async function ensureToolFor(bot, task) {
   if (task === 'wood') {
     return ensureWoodenAxe(bot)
   }
@@ -190,7 +190,7 @@ export async function ensureToolFor(bot, task) {
  * @param {import('mineflayer').Bot} bot
  * @returns {Promise<boolean>}
  */
-export async function placeCraftingTable(bot) {
+async function placeCraftingTable(bot) {
   try {
     const tableItem = bot.inventory.items().find(i => i.name === 'crafting_table')
     if (!tableItem) return false
@@ -219,7 +219,7 @@ export async function placeCraftingTable(bot) {
  * @param {import('mineflayer').Bot} bot
  * @returns {Promise<boolean>} true if placed
  */
-export async function placeFurnace(bot) {
+async function placeFurnace(bot) {
   try {
     const furnaceItem = bot.inventory.items().find(i => i.name && i.name.includes('furnace'))
     if (!furnaceItem) return false
@@ -247,7 +247,7 @@ export async function placeFurnace(bot) {
  * @param {import('mineflayer').Bot} bot
  * @returns {Promise<boolean>} true if furnace block is available
  */
-export async function ensureFurnace(bot) {
+async function ensureFurnace(bot) {
   // quick scan for furnace block
   const p = bot.entity.position
   for (let dx = -3; dx <= 3; dx++) {
@@ -307,7 +307,7 @@ export async function ensureFurnace(bot) {
  * @param {number} logsToUse
  * @returns {Promise<boolean>} true if crafted planks
  */
-export async function craftPlanksFromLogs(bot, logsToUse = 1) {
+async function craftPlanksFromLogs(bot, logsToUse = 1) {
   try {
     const plankRecipes = bot.recipesAll ? bot.recipesAll('planks') : bot.recipesFor('planks', null, 1)
     if (!plankRecipes || plankRecipes.length === 0) return false
@@ -326,7 +326,7 @@ export async function craftPlanksFromLogs(bot, logsToUse = 1) {
  * @param {import('mineflayer').Bot} bot
  * @returns {Promise<boolean>} true if fuel available
  */
-export async function ensureFuel(bot) {
+async function ensureFuel(bot) {
   try {
     const items = bot.inventory.items()
     const hasCoal = items.some(i => i.name && (i.name === 'coal' || i.name === 'charcoal'))
@@ -359,7 +359,7 @@ export async function ensureFuel(bot) {
  * @param {import('mineflayer').Bot} bot
  * @returns {boolean}
  */
-export function hasIronPickaxe(bot) {
+function hasIronPickaxe(bot) {
   const items = bot.inventory.items()
   return items.some(i => i.name && (i.name.includes('iron_pickaxe') || i.name.includes('diamond_pickaxe') || i.name.includes('netherite_pickaxe')))
 }
@@ -369,7 +369,7 @@ export function hasIronPickaxe(bot) {
  * @param {import('mineflayer').Bot} bot
  * @returns {boolean}
  */
-export function hasStonePickaxe(bot) {
+function hasStonePickaxe(bot) {
   const items = bot.inventory.items()
   return items.some(i => i.name && (i.name.includes('stone_pickaxe') || i.name.includes('iron_pickaxe') || i.name.includes('diamond_pickaxe') || i.name.includes('netherite_pickaxe')))
 }
@@ -380,7 +380,7 @@ export function hasStonePickaxe(bot) {
  * @param {import('mineflayer').Bot} bot
  * @returns {Promise<boolean>}
  */
-export async function ensureStonePickaxe(bot) {
+async function ensureStonePickaxe(bot) {
   if (hasPickaxe(bot) && hasStonePickaxe(bot)) return true
   // If we have any pickaxe (wooden) but no stone, try to upgrade
   try {
@@ -412,7 +412,7 @@ export async function ensureStonePickaxe(bot) {
  * @param {import('mineflayer').Bot} bot
  * @returns {Promise<boolean>}
  */
-export async function ensureIronPickaxe(bot) {
+async function ensureIronPickaxe(bot) {
   if (hasPickaxe(bot) && hasIronPickaxe(bot)) return true
   // Try to craft iron_pickaxe
   try {
@@ -439,4 +439,20 @@ export async function ensureIronPickaxe(bot) {
 }
 
 
-export default { hasPickaxe, tryCraft, ensureWoodenPickaxe }
+module.exports = {
+  hasPickaxe,
+  tryCraft,
+  ensureWoodenPickaxe,
+  hasAxe,
+  ensureWoodenAxe,
+  ensureToolFor,
+  placeCraftingTable,
+  placeFurnace,
+  ensureFurnace,
+  craftPlanksFromLogs,
+  ensureFuel,
+  hasIronPickaxe,
+  hasStonePickaxe,
+  ensureStonePickaxe,
+  ensureIronPickaxe
+}

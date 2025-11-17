@@ -5,7 +5,7 @@
  * Supports following players, moving to positions, and stopping.
  */
 
-import pathfinderPkg from 'mineflayer-pathfinder'
+const pathfinderPkg = require('mineflayer-pathfinder')
 const { Movements, goals } = pathfinderPkg
 const { GoalFollow, GoalNear, GoalBlock } = goals
 
@@ -16,7 +16,7 @@ const { GoalFollow, GoalNear, GoalBlock } = goals
  * @param {object} bot - Mineflayer bot instance
  * @throws {Error} If pathfinder plugin fails to load
  */
-export function setupPathfinder(bot) {
+function setupPathfinder(bot) {
   try {
     const { pathfinder } = pathfinderPkg
     bot.loadPlugin(pathfinder)
@@ -35,7 +35,7 @@ export function setupPathfinder(bot) {
  * @param {string} playerName - Username to follow
  * @throws {Error} If player not found or pathfinder unavailable
  */
-export function followPlayer(bot, playerName) {
+function followPlayer(bot, playerName) {
   try {
     const player = bot.players[playerName]
     if (!player || !player.entity) {
@@ -62,7 +62,7 @@ export function followPlayer(bot, playerName) {
  * @param {string} playerName - Username to move toward
  * @throws {Error} If player not found or pathfinding fails
  */
-export function goToPlayer(bot, playerName) {
+function goToPlayer(bot, playerName) {
   try {
     const player = bot.players[playerName]
     if (!player || !player.entity) {
@@ -89,7 +89,7 @@ export function goToPlayer(bot, playerName) {
  * @param {object} position - Target position {x, y, z}
  * @throws {Error} If position invalid or pathfinding fails
  */
-export function moveToPosition(bot, position) {
+function moveToPosition(bot, position) {
   try {
     if (!position || typeof position.x !== 'number' || typeof position.z !== 'number') {
       throw new Error('Ongeldige positie')
@@ -113,7 +113,7 @@ export function moveToPosition(bot, position) {
  * @param {object} bot - Mineflayer bot instance
  * @throws {Error} If pathfinder unavailable
  */
-export function stop(bot) {
+function stop(bot) {
   try {
     bot.pathfinder.setGoal(null)
     console.log('[Movement] Stopped')
@@ -128,11 +128,11 @@ export function stop(bot) {
  * 
  * @param {object} bot - Mineflayer bot instance
  */
-export function stay(bot) {
+function stay(bot) {
   stop(bot)
 }
 
-export default {
+module.exports = {
   setupPathfinder,
   followPlayer,
   goToPlayer,

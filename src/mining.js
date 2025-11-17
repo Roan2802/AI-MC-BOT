@@ -5,10 +5,10 @@
  * Scans blocks, navigates to closest match, and digs.
  */
 
-import pathfinderPkg from 'mineflayer-pathfinder'
+const pathfinderPkg = require('mineflayer-pathfinder')
 const { Movements, goals } = pathfinderPkg
-import { ensureWoodenPickaxe, ensureStonePickaxe, hasPickaxe } from './crafting.js'
-import { selectSafeTarget } from './navigation.js'
+const { ensureWoodenPickaxe, ensureStonePickaxe, hasPickaxe } = require('./crafting.js')
+const { selectSafeTarget } = require('./navigation.js')
 
 /**
  * Scan for blocks matching a resource type and harvest the closest one.
@@ -19,7 +19,7 @@ import { selectSafeTarget } from './navigation.js'
  * @returns {Promise<void>}
  * @throws {Error} If no matching blocks found or mining fails
  */
-export async function mineResource(bot, resourceType, radius = 20) {
+async function mineResource(bot, resourceType, radius = 20) {
   try {
     // Ensure we have a suitable pickaxe for stone/ores; prefer stone+ if possible
     const needPickaxeKeywords = ['stone', 'ore', 'coal', 'iron', 'andesite', 'granite', 'diorite']
@@ -183,7 +183,7 @@ function findConnectedOres(bot, startBlock, radius = 32) {
  * @param {number} maxBlocks
  * @returns {Promise<number>} mined count
  */
-export async function mineVein(bot, startBlock, radius = 32, maxBlocks = 64) {
+async function mineVein(bot, startBlock, radius = 32, maxBlocks = 64) {
   const cluster = findConnectedOres(bot, startBlock, radius)
   if (!cluster || cluster.length === 0) return 0
   // sort by y descending so we mine higher blocks first
@@ -209,7 +209,7 @@ export async function mineVein(bot, startBlock, radius = 32, maxBlocks = 64) {
  * @param {number} [maxBlocks=16]
  * @returns {Promise<number>} number of blocks mined
  */
-export async function mineOres(bot, radius = 32, maxBlocks = 16) {
+async function mineOres(bot, radius = 32, maxBlocks = 16) {
   let mined = 0
   for (let i = 0; i < maxBlocks; i++) {
     // find nearest ore block
@@ -225,4 +225,4 @@ export async function mineOres(bot, radius = 32, maxBlocks = 16) {
   return mined
 }
 
-export default { mineResource, mineOres }
+module.exports = { mineResource, mineOres }

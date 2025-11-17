@@ -6,7 +6,7 @@
  * and will call `mineResource` for basic gathering tasks.
  */
 
-import { mineResource } from './mining.js'
+const { mineResource } = require('./mining.js');
 
 /**
  * Count items in inventory that contain nameFragment.
@@ -14,7 +14,7 @@ import { mineResource } from './mining.js'
  * @param {string} nameFragment
  * @returns {number}
  */
-export function countItem(bot, nameFragment) {
+function countItem(bot, nameFragment) {
   const items = bot.inventory.items()
   return items.reduce((sum, it) => {
     if (it && it.name && it.name.includes(nameFragment)) return sum + it.count
@@ -31,7 +31,7 @@ export function countItem(bot, nameFragment) {
  * @param {object} [opts] - { radius, attempts }
  * @returns {Promise<boolean>} true if required amount is present
  */
-export async function ensureResource(bot, resourceFragment, amount = 1, opts = {}) {
+async function ensureResource(bot, resourceFragment, amount = 1, opts = {}) {
   const radius = opts.radius || 20
   const attempts = opts.attempts || 2
 
@@ -51,4 +51,4 @@ export async function ensureResource(bot, resourceFragment, amount = 1, opts = {
   return have >= amount
 }
 
-export default { countItem, ensureResource }
+module.exports = { countItem, ensureResource };

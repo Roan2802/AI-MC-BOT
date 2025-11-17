@@ -3,8 +3,8 @@
  * Edge case and robustness tests for additional coverage.
  */
 
-import assert from 'assert'
-import * as safety from '../utils/safety.js'
+const assert = require('assert');
+const safety = require('../utils/safety.js');
 
 let testCount = 0
 let passCount = 0

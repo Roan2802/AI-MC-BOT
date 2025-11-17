@@ -1,5 +1,8 @@
 
 // GuardianBot Combat System v1 – Hybrid Tactical
+const pathfinderPkg = require('mineflayer-pathfinder')
+const { goals } = pathfinderPkg
+const { GoalFollow } = goals
 const { goals: { GoalFollow } } = require('mineflayer-pathfinder')
 
 /**
@@ -272,4 +275,4 @@ function initCombatSystem(bot, config) {
   }
 }
 
-export { initCombatSystem }
+module.exports = { initCombatSystem }

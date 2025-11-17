@@ -1,8 +1,8 @@
-import assert from 'assert'
-import * as safety from '../utils/safety.js'
-import * as combat from '../src/combat.js'
-import * as combatEnhanced from '../src/combatEnhanced.js'
-import initCommandRouter from '../commands/commandRouter.js'
+const assert = require('assert');
+const safety = require('../utils/safety.js');
+const combat = require('../src/combat.js');
+const combatEnhanced = require('../src/combatEnhanced.js');
+const initCommandRouter = require('../commands/commandRouter.js');
 
 console.log('Running quick unit tests...');
 

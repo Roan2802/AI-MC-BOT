@@ -1,10 +1,10 @@
-import { isPositionSafe, findNearbySafePosition, isLavaNearby, isFireNearby } from '../utils/safety.js'
-import { goTo } from './navigation.js'
+const { isPositionSafe, findNearbySafePosition, isLavaNearby, isFireNearby } = require('../utils/safety.js');
+const { goTo } = require('./navigation.js');
 
 /**
  * Safety monitor: periodically checks bot's surroundings and moves to safe spot.
  */
-export function startSafetyMonitor(bot, opts = {}) {
+function startSafetyMonitor(bot, opts = {}) {
   const intervalMs = opts.intervalMs || 3000
   const searchRadius = opts.searchRadius || 6
   if (bot._safetyMonitorId) return
@@ -102,11 +102,11 @@ export function startSafetyMonitor(bot, opts = {}) {
   }, intervalMs)
 }
 
-export function stopSafetyMonitor(bot) {
+function stopSafetyMonitor(bot) {
   if (bot._safetyMonitorId) {
     clearInterval(bot._safetyMonitorId)
     delete bot._safetyMonitorId
   }
 }
 
-export default { startSafetyMonitor, stopSafetyMonitor }
+module.exports = { startSafetyMonitor, stopSafetyMonitor };

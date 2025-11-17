@@ -6,13 +6,13 @@ import { tryInitEnhanced, enableAutoEat } from '../src/combatEnhanced.js'
 
 /**
  * Command router with NLP support.
- * Routes hard commands (!) and natural language intents to builtinCommands.
- * 
- * Hard commands (!command arg1 arg2) are executed immediately.
- * Natural language messages addressed to the bot are parsed via NLP,
- * split on conjunctions, and executed as intent sequences.
- * 
- * @param {object} bot - Mineflayer bot instance
+const builtin = require('./builtinCommands.js')
+const { parseIntent } = require('../nlp/intentParser.js')
+const { createDefaultEngine } = require('../src/automation.js')
+const { startSafetyMonitor } = require('../src/safetyMonitor.js')
+const { tryInitEnhanced, enableAutoEat } = require('../src/combatEnhanced.js')
+
+function initCommandRouter(bot) {
  */
 export default function initCommandRouter(bot) {
   // Prevent multiple initializations (e.g., respawn triggers)
@@ -167,6 +167,9 @@ export default function initCommandRouter(bot) {
       })
       processQueue()
     }
+}
+
+module.exports = initCommandRouter
   })
 
   return { initCommandRouter }

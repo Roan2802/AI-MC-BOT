@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "description": "AI controlled Mineflayer bot",
   "main": "bot.js",
-  "type": "module",
   "scripts": {
     "start": "node bot.js"
   },

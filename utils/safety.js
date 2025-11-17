@@ -2,7 +2,7 @@
  * Safety helpers to check blocks and positions.
  * These are simple heuristics: not exhaustive.
  */
-export function isBlockSafe(bot, block){
+function isBlockSafe(bot, block){
   if (!block) return false
   const name = block.name || ''
   if (name.includes('lava')) return false
@@ -12,7 +12,7 @@ export function isBlockSafe(bot, block){
   return true
 }
 
-export function isPositionSafe(bot, pos){
+function isPositionSafe(bot, pos){
   if (!pos) return false
   if (!bot) return false
   try {
@@ -40,7 +40,7 @@ export function isPositionSafe(bot, pos){
   }
 }
 
-export function isLavaNearby(bot, pos, radius = 3) {
+function isLavaNearby(bot, pos, radius = 3) {
   if (!bot || !pos) return false
   try {
     for (let dx = -radius; dx <= radius; dx++) {
@@ -57,7 +57,7 @@ export function isLavaNearby(bot, pos, radius = 3) {
   return false
 }
 
-export function isFireNearby(bot, pos, radius = 2) {
+function isFireNearby(bot, pos, radius = 2) {
   if (!bot || !pos) return false
   try {
     for (let dx = -radius; dx <= radius; dx++) {
@@ -77,7 +77,7 @@ export function isFireNearby(bot, pos, radius = 2) {
   return false
 }
 
-export function isDeepDrop(bot, pos, threshold = 4) {
+function isDeepDrop(bot, pos, threshold = 4) {
   if (!bot || !pos) return false
   try {
     let depth = 0
@@ -92,7 +92,7 @@ export function isDeepDrop(bot, pos, threshold = 4) {
   }
 }
 
-export function findNearbySafePosition(bot, startPos, searchRadius = 6) {
+function findNearbySafePosition(bot, startPos, searchRadius = 6) {
   if (!bot || !startPos) return null
   try {
     const origin = { x: Math.floor(startPos.x), y: Math.floor(startPos.y), z: Math.floor(startPos.z) }
@@ -116,4 +116,4 @@ export function findNearbySafePosition(bot, startPos, searchRadius = 6) {
   return null
 }
 
-export default { isBlockSafe, isPositionSafe }
+module.exports = { isBlockSafe, isPositionSafe, isLavaNearby, isFireNearby, isDeepDrop, findNearbySafePosition };

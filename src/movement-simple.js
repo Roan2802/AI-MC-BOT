@@ -1,4 +1,4 @@
-import pathfinderPkg from 'mineflayer-pathfinder'
+const pathfinderPkg = require('mineflayer-pathfinder');
 const { Movements, goals } = pathfinderPkg
 const { GoalFollow, GoalNear } = goals
 
@@ -6,13 +6,13 @@ const { GoalFollow, GoalNear } = goals
  * Simple movement helper using mineflayer-pathfinder
  */
 
-export function setupPathfinder(bot) {
+function setupPathfinder(bot) {
   const { pathfinder } = pathfinderPkg
   bot.loadPlugin(pathfinder)
   console.log('[Movement] Pathfinder plugin loaded')
 }
 
-export function followPlayer(bot, playerName) {
+function followPlayer(bot, playerName) {
   try {
     const player = bot.players[playerName]
     if (!player || !player.entity) {
@@ -29,7 +29,7 @@ export function followPlayer(bot, playerName) {
   }
 }
 
-export function goToPlayer(bot, playerName) {
+function goToPlayer(bot, playerName) {
   try {
     const player = bot.players[playerName]
     if (!player || !player.entity) {
@@ -46,7 +46,7 @@ export function goToPlayer(bot, playerName) {
   }
 }
 
-export function stop(bot) {
+function stop(bot) {
   try {
     bot.pathfinder.setGoal(null)
     console.log('[Movement] Stopped')
@@ -55,4 +55,4 @@ export function stop(bot) {
   }
 }
 
-export default { setupPathfinder, followPlayer, goToPlayer, stop }
+module.exports = { setupPathfinder, followPlayer, goToPlayer, stop };

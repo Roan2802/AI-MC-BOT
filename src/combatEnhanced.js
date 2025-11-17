@@ -6,7 +6,7 @@
 let hasPvp = false
 let hasAutoEat = false
 
-export async function tryInitEnhanced(bot) {
+async function tryInitEnhanced(bot) {
   try {
     const pvpMod = await import('mineflayer-pvp')
     const pvpPlugin = pvpMod.plugin || pvpMod.default || pvpMod
@@ -44,7 +44,7 @@ export async function tryInitEnhanced(bot) {
   }
 }
 
-export function enhancedAttack(bot, entity) {
+function enhancedAttack(bot, entity) {
   if (!entity) return false
   if (hasPvp && bot.pvp) {
     try {
@@ -69,7 +69,7 @@ export function enhancedAttack(bot, entity) {
   return false
 }
 
-export function enableAutoEat(bot, opts = {}) {
+function enableAutoEat(bot, opts = {}) {
   if (hasAutoEat && bot.autoEat) {
     try {
       bot.autoEat.options = bot.autoEat.options || {}
@@ -88,11 +88,15 @@ export function enableAutoEat(bot, opts = {}) {
   return false
 }
 
-export function disableAutoEat(bot) {
+function disableAutoEat(bot) {
   if (hasAutoEat && bot.autoEat && typeof bot.autoEat.stop === 'function') {
     try { bot.autoEat.stop(); return true } catch (e) { return false }
   }
   return false
 }
 
-export default { tryInitEnhanced, enhancedAttack, enableAutoEat, disableAutoEat }
+module.exports = { tryInitEnhanced, enhancedAttack, enableAutoEat, disableAutoEat }
+module.exports.tryInitEnhanced = tryInitEnhanced
+module.exports.enhancedAttack = enhancedAttack
+module.exports.enableAutoEat = enableAutoEat
+module.exports.disableAutoEat = disableAutoEat

@@ -8,13 +8,17 @@
 import { followPlayer, goToPlayer, stop as stopMovement, moveToPosition, stay } from '../src/movement.js'
 import { mineResource, mineOres } from '../src/mining.js'
 import { ensureWoodenPickaxe, hasPickaxe, ensureToolFor, ensureStonePickaxe, ensureIronPickaxe } from '../src/crafting.js'
-import { setHome, getHome, goHome } from '../src/memory.js'
-import { goTo, selectSafeTarget } from '../src/navigation.js'
-import { returnHomeAndStore } from '../src/storage.js'
-import { smeltOres, createDriedKelp, createDriedKelpBlock, getJobQueue, buildSmartFuelPlan } from '../src/smelting.js'
-import { harvestWood } from '../src/wood.js'
-import { createCharcoal } from '../src/smelting.js'
-import { isResourceDepleted, getWornTools, getInventoryStatus, getTimeOfDay } from '../src/automation.js'
+const { followPlayer, goToPlayer, stop: stopMovement, moveToPosition, stay } = require('../src/movement.js')
+const { mineResource, mineOres } = require('../src/mining.js')
+const { ensureWoodenPickaxe, hasPickaxe, ensureToolFor, ensureStonePickaxe, ensureIronPickaxe } = require('../src/crafting.js')
+const { setHome, getHome, goHome } = require('../src/memory.js')
+const { goTo, selectSafeTarget } = require('../src/navigation.js')
+const { returnHomeAndStore } = require('../src/storage.js')
+const { smeltOres, createDriedKelp, createDriedKelpBlock, getJobQueue, buildSmartFuelPlan } = require('../src/smelting.js')
+const { harvestWood } = require('../src/wood.js')
+const { createCharcoal } = require('../src/smelting.js')
+const { isResourceDepleted, getWornTools, getInventoryStatus, getTimeOfDay } = require('../src/automation.js')
+
 
 /**
  * Format position for display.
@@ -25,6 +29,7 @@ function formatPos(p) {
 }
 
 export default {
+module.exports = {
   /**
    * status - Report current position and health.
    * @param {object} bot

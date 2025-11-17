@@ -6,8 +6,8 @@
  * appropriate tools exist.
  */
 
-import { mineResource } from './mining.js'
-import { ensureToolFor } from './crafting.js'
+const { mineResource } = require('./mining.js')
+const { ensureToolFor } = require('./crafting.js')
 
 /**
  * Find connected log blocks (simple flood-fill) starting from a root log.
@@ -55,7 +55,7 @@ function findConnectedLogs(bot, startBlock, radius = 20) {
  * @param {number} [maxBlocks=32]
  * @returns {Promise<number>} Number of blocks successfully harvested
  */
-export async function harvestWood(bot, radius = 20, maxBlocks = 32) {
+async function harvestWood(bot, radius = 20, maxBlocks = 32) {
   // ensure we have an axe
   await ensureToolFor(bot, 'wood')
 
@@ -97,4 +97,4 @@ export async function harvestWood(bot, radius = 20, maxBlocks = 32) {
   return collected
 }
 
-export default { harvestWood }
+module.exports = { harvestWood }

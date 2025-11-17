@@ -16,7 +16,7 @@
  * @param {number} minCount - Minimum acceptable count (default 16)
  * @returns {{depleted: boolean, current: number}}
  */
-export function isResourceDepleted(bot, resourceFragment, minCount = 16) {
+function isResourceDepleted(bot, resourceFragment, minCount = 16) {
   const items = bot.inventory.items()
   const current = items.reduce((sum, i) => sum + (i.name && i.name.includes(resourceFragment) ? i.count : 0), 0)
   return { depleted: current < minCount, current }
@@ -28,7 +28,7 @@ export function isResourceDepleted(bot, resourceFragment, minCount = 16) {
  * @param {number} durabilityThreshold - Durability % below which tool is considered "worn" (default 25)
  * @returns {Array<{name: string, durability: number, percent: number}>}
  */
-export function getWornTools(bot, durabilityThreshold = 25) {
+function getWornTools(bot, durabilityThreshold = 25) {
   const items = bot.inventory.items()
   const worn = []
   for (const item of items) {
@@ -50,7 +50,7 @@ export function getWornTools(bot, durabilityThreshold = 25) {
  * @param {number} fullnessThreshold - Percent full at which inventory is considered "full" (default 80)
  * @returns {{full: boolean, percent: number, usedSlots: number, totalSlots: number}}
  */
-export function getInventoryStatus(bot, fullnessThreshold = 80) {
+function getInventoryStatus(bot, fullnessThreshold = 80) {
   const items = bot.inventory.items()
   const totalSlots = bot.inventory.slots.length
   const usedSlots = items.filter(i => i).length
@@ -63,7 +63,7 @@ export function getInventoryStatus(bot, fullnessThreshold = 80) {
  * @param {import('mineflayer').Bot} bot
  * @returns {{isNight: boolean, time: number}}
  */
-export function getTimeOfDay(bot) {
+function getTimeOfDay(bot) {
   // bot.time.age gives age in ticks; ~24000 ticks per day
   // Night is roughly 13000-22000 ticks (of 24000)
   const time = (bot.time.age || 0) % 24000
@@ -177,7 +177,7 @@ export class AutomationEngine {
  * @param {import('mineflayer').Bot} bot
  * @returns {AutomationEngine} configured engine
  */
-export function createDefaultEngine(bot) {
+function createDefaultEngine(bot) {
   const engine = new AutomationEngine(bot)
 
   // Rule 1: Resource depletion - trigger gathering
@@ -275,4 +275,4 @@ export function createDefaultEngine(bot) {
   return engine
 }
 
-export default { isResourceDepleted, getWornTools, getInventoryStatus, getTimeOfDay, AutomationEngine, createDefaultEngine }
+module.exports = { isResourceDepleted, getWornTools, getInventoryStatus, getTimeOfDay, AutomationEngine, createDefaultEngine }

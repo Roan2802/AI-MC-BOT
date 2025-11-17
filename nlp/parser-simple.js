@@ -80,7 +80,7 @@ Antwoord ALLEEN JSON in dit formaat:
 /**
  * Main parser function
  */
-export async function parseIntent(message, username) {
+async function parseIntent(message, username) {
   if (USE_OLLAMA) {
     const fromOllama = await callOllama(message, username)
     if (fromOllama) return fromOllama
@@ -88,4 +88,4 @@ export async function parseIntent(message, username) {
   return ruleBasedParse(message, username)
 }
 
-export default { parseIntent }
+module.exports = { parseIntent };

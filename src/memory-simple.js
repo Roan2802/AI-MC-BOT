@@ -1,5 +1,5 @@
-import fs from 'fs'
-import path from 'path'
+const fs = require('fs');
+const path = require('path');
 
 const dataDir = path.resolve(process.cwd(), 'data')
 const homeFile = path.join(dataDir, 'home.json')
@@ -11,7 +11,7 @@ function ensureDataDir() {
 /**
  * Set home position for the bot
  */
-export function setHome(bot) {
+function setHome(bot) {
   const pos = bot.entity.position
   const home = { x: pos.x, y: pos.y, z: pos.z }
   try {
@@ -26,7 +26,7 @@ export function setHome(bot) {
 /**
  * Get home position
  */
-export function getHome(bot) {
+function getHome(bot) {
   try {
     if (fs.existsSync(homeFile)) {
       const raw = fs.readFileSync(homeFile, 'utf8')
@@ -40,4 +40,4 @@ export function getHome(bot) {
   return null
 }
 
-export default { setHome, getHome }
+module.exports = { setHome, getHome };

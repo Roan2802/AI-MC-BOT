@@ -363,19 +363,41 @@ async function placeCraftingTable(bot) {
     const tableItem = bot.inventory.items().find(i => i.name === 'crafting_table')
     if (!tableItem) return false
 
-    // find a block to place on (prefer block under feet)
-    const around = [ [0,-1,0], [1,0,0], [-1,0,0], [0,0,1], [0,0,-1] ]
-    let ref = null
-    for (const off of around) {
-      const b = bot.blockAt(bot.entity.position.offset(off[0], off[1], off[2]))
-      if (b && b.name !== 'air') { ref = b; break }
+    // Try to place table NEXT TO bot, not under bot
+    // Check positions around bot (1 block away horizontally)
+    const directions = [
+      [1, 0, 0],   // East
+      [-1, 0, 0],  // West
+      [0, 0, 1],   // South
+      [0, 0, -1],  // North
+      [1, 0, 1],   // Southeast
+      [-1, 0, 1],  // Southwest
+      [1, 0, -1],  // Northeast
+      [-1, 0, -1]  // Northwest
+    ]
+    
+    for (const dir of directions) {
+      const targetPos = bot.entity.position.offset(dir[0], 0, dir[2])
+      const targetBlock = bot.blockAt(targetPos)
+      const blockBelow = bot.blockAt(targetPos.offset(0, -1, 0))
+      
+      // Check if position is air and has solid block below
+      if (targetBlock && targetBlock.name === 'air' && 
+          blockBelow && blockBelow.name !== 'air') {
+        try {
+          await bot.equip(tableItem, 'hand')
+          await bot.placeBlock(blockBelow, new bot.Vec3(0, 1, 0))
+          bot.chat('📋 Crafting table geplaatst naast bot')
+          return true
+        } catch (e) {
+          // Try next direction if this one fails
+          continue
+        }
+      }
     }
-    if (!ref) return false
-
-    // equip the crafting table and place it
-    await bot.equip(tableItem, 'hand')
-    await bot.placeBlock(ref, new Vec3(0, 1, 0))
-    return true
+    
+    bot.chat('⚠️ Geen ruimte om crafting table te plaatsen')
+    return false
   } catch (e) {
     console.warn('[Crafting] placeCraftingTable failed:', e && e.message)
     return false

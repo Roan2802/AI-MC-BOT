@@ -361,13 +361,15 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
     await collectNearbyItems(bot, 15)
     bot.chat(`📦 Items verzameld`)
 
-    // STEP 5: Replant sapling if we have one
+    // STEP 5: Plant ALL saplings we have before continuing
     if (opts.replant) {
       const saplingName = `${treeType}_sapling`
-      const hasSapling = bot.inventory.items().find(i => i.name === saplingName)
+      let saplingItem = bot.inventory.items().find(i => i.name === saplingName)
       
-      if (hasSapling) {
-        const saplingPos = findSaplingPosition(bot, basePos, 3)
+      while (saplingItem && saplingItem.count > 0) {
+        // Use bot's current position as reference for nearby planting
+        const currentPos = bot.entity.position.clone()
+        const saplingPos = findSaplingPosition(bot, currentPos, 5)
         if (saplingPos) {
           try {
             const movements = new Movements(bot)
@@ -376,16 +378,25 @@ async function harvestWood(bot, radius = 20, maxBlocks = 32, options = {}) {
             await bot.pathfinder.goto(goal)
             const planted = await replantSapling(bot, saplingPos, treeType)
             if (!planted) {
-              bot.chat(`⚠️ Kon sapling niet planten op ${Math.floor(saplingPos.x)}, ${Math.floor(saplingPos.z)}`)
+              bot.chat(`⚠️ Kon sapling niet planten`)
+              break // Stop trying if planting fails
             }
+            // Update sapling count
+            saplingItem = bot.inventory.items().find(i => i.name === saplingName)
           } catch (e) {
             if (bot._debug) console.log('[Wood] Could not reach sapling position')
+            break
           }
         } else {
-          bot.chat(`⚠️ Geen geschikte plek voor sapling (4-block spacing)`)
+          bot.chat(`⚠️ Geen geschikte plek meer voor sapling (4-block spacing)`)
+          break
         }
-      } else {
-        bot.chat(`⚠️ Geen ${saplingName} om te planten`)
+      }
+      
+      // Report remaining saplings
+      const remainingSaplings = bot.inventory.items().find(i => i.name === saplingName)
+      if (remainingSaplings && remainingSaplings.count > 0) {
+        bot.chat(`🌱 ${remainingSaplings.count} saplings over (geen ruimte meer)`)
       }
     }
 

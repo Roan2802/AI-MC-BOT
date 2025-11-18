@@ -201,15 +201,24 @@ module.exports = {
    * @param {string} count - Number of logs to harvest
    */
   async chop(bot, count = '32') {
-    const n = parseInt(count, 10) || 32
+    const infinityMode = typeof count === 'string' && ['infinity','inf','*'].includes(count.toLowerCase())
+    const n = infinityMode ? 500000 : (parseInt(count, 10) || 32)
     
     try {
-      bot.chat(`🌲 Start houthakken... (${n} logs - simplified workflow)`)
-      console.log('[Chop] Starting harvestWood with', n, 'logs')
-      // Use a larger search radius to make pre-axe log gathering more reliable
+      if (infinityMode) {
+        bot.chat('🌲 Infinity houthakken gestart — tot inventaris vol is...')
+      } else {
+        bot.chat(`🌲 Start houthakken... (${n} logs - simplified workflow)`)
+      }
+      console.log('[Chop] Starting harvestWood with', infinityMode ? 'infinity' : n, 'logs')
+      // Large radius for reliability
       const got = await harvestWood(bot, 48, n)
       console.log('[Chop] harvestWood completed, got', got, 'logs')
-      bot.chat(`✅ Klaar: ${got} logs verzameld`)
+      if (infinityMode) {
+        bot.chat(`✅ Infinity modus gestopt: ${got} logs verzameld (inventaris waarschijnlijk vol of geen bomen meer)`)      
+      } else {
+        bot.chat(`✅ Klaar: ${got} logs verzameld`)
+      }
     } catch (e) {
       console.error('[Chop] Command error:', e)
       bot.chat(`❌ Error: ${e.message}`)
@@ -573,6 +582,7 @@ module.exports = {
       '!mine [bron] - Mijn resource (standaard: oak_log)',
       '!smelt - Smelt beschikbare ertsen in oven (best-effort)',
       '!chop - Hak hout in de buurt (best-effort)',
+      '!chop infinity - Hak hout tot inventaris vol',
       '!inventory - Toon inventaris inhoud',
       '!makecharcoal - Maak charcoal van logs (gebruik oven)',
       '!mineores - Mijn meerdere ertsen (best-effort)',

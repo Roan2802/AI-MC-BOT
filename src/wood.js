@@ -17,6 +17,26 @@ const pathfinderPkg = require('mineflayer-pathfinder')
 const Movements = pathfinderPkg.Movements
 const goals = pathfinderPkg.goals
 
+// Ensure best axe is equipped (idempotent)
+async function ensureBestAxeEquipped(bot) {
+  try {
+    const items = bot.inventory.items()
+    const order = ['diamond_axe', 'iron_axe', 'stone_axe', 'wooden_axe']
+    let best = null
+    for (const name of order) {
+      const found = items.find(i => i.name === name)
+      if (found) { best = found; break }
+    }
+    if (!best) return false
+    if (!bot.heldItem || bot.heldItem.name !== best.name) {
+      await bot.equip(best, 'hand')
+    }
+    return true
+  } catch (e) {
+    return false
+  }
+}
+
 /**
  * Collect nearby dropped items (logs, sticks, saplings, apples)
  * @param {import('mineflayer').Bot} bot
@@ -158,17 +178,42 @@ async function plantSaplingAtTreeBase(bot, treeBase, plantedPositions, options =
     // Plant as many saplings as we have (up to a reasonable limit)
     const maxToPlant = Math.min(totalSaplings, 3) // Max 3 saplings per tree
     
+    // Helper: find nearby valid ground spots (dirt/grass/podzol with air above)
+    function findAlternativeGround(base, maxRadius = 5) {
+      const spots = []
+      for (let r = 1; r <= maxRadius; r++) {
+        for (let dx = -r; dx <= r; dx++) {
+          for (let dz = -r; dz <= r; dz++) {
+            const pos = base.offset(dx, 0, dz)
+            const below = bot.blockAt(pos.offset(0, -1, 0))
+            const above = bot.blockAt(pos)
+            if (!below || !above) continue
+            if (above.name !== 'air') continue
+            if (!['dirt', 'grass_block', 'podzol'].includes(below.name)) continue
+            const tooClose = plantedPositions.some(p => p.distanceTo(pos) < minSaplingSpacing)
+            if (tooClose) continue
+            spots.push(pos)
+          }
+        }
+      }
+      return spots
+    }
+
     for (let i = 0; i < maxToPlant; i++) {
       const sapling = bot.inventory.items().find(i => i.name === saplingName)
       if (!sapling) break
 
       // Find suitable position near tree base
-      const targetPlantPos = findPlantingSpotNearBase(
+      let targetPlantPos = findPlantingSpotNearBase(
         bot,
         treeBase,
         [...plantedPositions, ...existingWorldSaplings],
         minSaplingSpacing
       )
+      if (!targetPlantPos) {
+        const altSpots = findAlternativeGround(treeBase, 6)
+        targetPlantPos = altSpots.find(p => true) || null
+      }
       
       if (!targetPlantPos) {
         console.log(`[Wood] No more suitable planting spots near tree base`)
@@ -179,15 +224,40 @@ async function plantSaplingAtTreeBase(bot, treeBase, plantedPositions, options =
       await bot.equip(sapling, 'hand')
       const blockBelow = bot.blockAt(targetPlantPos.offset(0, -1, 0))
 
-      if (blockBelow && (blockBelow.name === 'dirt' || blockBelow.name === 'grass_block' || blockBelow.name === 'podzol')) {
-        await bot.placeBlock(blockBelow, { x: 0, y: 1, z: 0 })
-        plantedPositions.push(targetPlantPos)
-        existingWorldSaplings.push(targetPlantPos) // Add to local tracking
-        planted++
-        console.log(
-          `[Wood] 🌱 Planted ${saplingName} #${planted} at ${Math.floor(targetPlantPos.x)}, ${Math.floor(targetPlantPos.z)}`
-        )
-        await new Promise(r => setTimeout(r, 300))
+      if (blockBelow && ['dirt', 'grass_block', 'podzol'].includes(blockBelow.name)) {
+        // Move closer if far
+        try {
+          const dist = bot.entity.position.distanceTo(targetPlantPos)
+          if (dist > 4) {
+            const movements = new Movements(bot)
+            bot.pathfinder.setMovements(movements)
+            const goal = new goals.GoalNear(targetPlantPos.x, targetPlantPos.y, targetPlantPos.z, 2)
+            await bot.pathfinder.goto(goal)
+          }
+        } catch (e) {}
+
+        // Look at ground to reduce placement fails
+        try { await bot.lookAt(blockBelow.position.offset(0.5, 0.5, 0.5)) } catch (e) {}
+
+        let placed = false
+        for (let attempt = 0; attempt < 3 && !placed; attempt++) {
+          try {
+            await bot.placeBlock(blockBelow, { x: 0, y: 1, z: 0 })
+            placed = true
+          } catch (e) {
+            await new Promise(r => setTimeout(r, 200))
+          }
+        }
+
+        if (placed) {
+          plantedPositions.push(targetPlantPos)
+            existingWorldSaplings.push(targetPlantPos)
+            planted++
+            console.log(`[Wood] 🌱 Planted ${saplingName} #${planted} at ${Math.floor(targetPlantPos.x)}, ${Math.floor(targetPlantPos.z)}`)
+            await new Promise(r => setTimeout(r, 250))
+        } else {
+          console.log('[Wood] Failed to place sapling after retries')
+        }
       }
     }
 
@@ -211,6 +281,165 @@ async function plantSaplingAtTreeBase(bot, treeBase, plantedPositions, options =
     console.log('[Wood] Error planting sapling:', e.message)
     return false
   }
+}
+
+/**
+ * Detect if bot is in water (feet or head block)
+ */
+function isInWater(bot) {
+  try {
+    const feet = bot.blockAt(bot.entity.position.floored())
+    const head = bot.blockAt(bot.entity.position.offset(0, 1, 0).floored())
+    const waterNames = ['water', 'flowing_water']
+    return (feet && waterNames.includes(feet.name)) || (head && waterNames.includes(head.name))
+  } catch (e) {
+    return false
+  }
+}
+
+/**
+ * Find nearest dry land block to stand on (solid block with air above)
+ */
+function findNearestDryLand(bot, maxRadius = 6) {
+  const origin = bot.entity.position.floored()
+  let best = null
+  let bestDist = Infinity
+  for (let r = 1; r <= maxRadius; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dz = -r; dz <= r; dz++) {
+        for (let dy = -1; dy <= 2; dy++) {
+          const pos = origin.offset(dx, dy, dz)
+          const block = bot.blockAt(pos)
+          const above = bot.blockAt(pos.offset(0, 1, 0))
+          if (!block || !above) continue
+          if (block.name === 'air' || block.name.includes('water')) continue
+          if (above.name !== 'air') continue
+          const dist = origin.distanceTo(pos)
+          if (dist < bestDist) {
+            bestDist = dist
+            best = pos
+          }
+        }
+      }
+    }
+    if (best) break
+  }
+  return best
+}
+
+/**
+ * Recover from water: navigate to nearest dry land and ensure we stay there.
+ */
+async function recoverFromWater(bot) {
+  if (!isInWater(bot)) return false
+  try {
+    const target = findNearestDryLand(bot, 8)
+    if (!target) return false
+    const movements = new Movements(bot)
+    // discourage going back into water by disallowing digging while recovering
+    movements.canDig = false
+    bot.pathfinder.setMovements(movements)
+    const goal = new goals.GoalNear(target.x, target.y, target.z, 1)
+    await bot.pathfinder.goto(goal)
+    // small forward nudge to leave edge
+    bot.setControlState('back', false)
+    bot.setControlState('forward', true)
+    await new Promise(r => setTimeout(r, 300))
+    bot.setControlState('forward', false)
+    return true
+  } catch (e) {
+    return false
+  }
+}
+
+/**
+ * Re-craft wooden axe mid-harvest if lost/broken.
+ */
+async function ensureAxeMidRun(bot, radius) {
+  const axe = getBestAxe(bot)
+  if (axe) return true
+  console.log('[Wood] Axe missing mid-run, re-crafting...')
+  bot.chat('🪓 Axe weg / stuk, opnieuw maken...')
+  // gather 5 fresh logs if needed
+  const countLogsInInventory = () => bot.inventory.items().filter(i => i.name && i.name.includes('log')).reduce((s, it) => s + it.count, 0)
+  if (countLogsInInventory() < 5) {
+    await ensureLogSupplyInternal(bot, 5, radius)
+  }
+  // craft planks
+  try {
+    const logsItem = bot.inventory.items().find(i => i && i.name && i.name.includes('log'))
+    if (logsItem) {
+      await craftPlanksFromLogs(bot, Math.min(3, logsItem.count))
+    }
+  } catch (e) {}
+  // ensure crafting table
+  const hasTable = await ensureCraftingTable(bot)
+  if (!hasTable) {
+    bot.chat('❌ Kan geen crafting table plaatsen voor axe')
+    return false
+  }
+  await ensureCraftingTableOpen(bot)
+  // craft sticks if low
+  const totalSticks = bot.inventory.items().filter(i => i.name === 'stick').reduce((s, it) => s + it.count, 0)
+  const totalPlanks = bot.inventory.items().filter(i => i.name && i.name.includes('planks')).reduce((s, it) => s + it.count, 0)
+  if (totalSticks < 2 && totalPlanks >= 2) {
+    try {
+      const stickItemId = bot.registry.itemsByName.stick
+      if (stickItemId) {
+        const recipes = bot.recipesFor(stickItemId.id, null, 1, null)
+        if (recipes && recipes.length > 0) await bot.craft(recipes[0], 1, null)
+      }
+    } catch (e) {}
+  }
+  // craft axe
+  try {
+    const craftingTableBlock = bot.findBlock({ matching: b => b && b.name === 'crafting_table', maxDistance: 6, count: 1 })
+    const axeItem = bot.registry.itemsByName['wooden_axe']
+    if (axeItem && craftingTableBlock) {
+      const recipes = bot.recipesFor(axeItem.id, null, 1, craftingTableBlock)
+      if (recipes && recipes.length > 0) {
+        await bot.craft(recipes[0], 1, craftingTableBlock)
+        bot.chat('✅ Nieuwe houten axe klaar')
+        await new Promise(r => setTimeout(r, 300))
+        const newAxe = getBestAxe(bot)
+        if (newAxe) await bot.equip(newAxe, 'hand')
+        return true
+      }
+    }
+  } catch (e) {
+    console.log('[Wood] Mid-run axe craft error:', e.message)
+  }
+  bot.chat('❌ Axe herstellen mislukt')
+  return false
+}
+
+// Internal log supply helper (non-export) used for mid-run axe crafting
+async function ensureLogSupplyInternal(bot, minLogs, radius) {
+  let attempts = 0
+  const countLogsInInventory = () => bot.inventory.items().filter(i => i && i.name && i.name.includes('log')).reduce((s, it) => s + it.count, 0)
+  while (countLogsInInventory() < minLogs && attempts < 8) {
+    attempts++
+    const nextLog = bot.findBlock({ matching: b => b && b.name && b.name.includes('log'), maxDistance: radius, count: 1 })
+    if (!nextLog) break
+    try {
+      const dist = bot.entity.position.distanceTo(nextLog.position)
+      if (dist > 4) {
+        const movements = new Movements(bot)
+        bot.pathfinder.setMovements(movements)
+        const goal = new goals.GoalNear(nextLog.position.x, nextLog.position.y, nextLog.position.z, 2)
+        await bot.pathfinder.goto(goal)
+      }
+      const targetBlock = bot.blockAt(nextLog.position)
+      if (targetBlock && targetBlock.diggable) {
+        bot._isDigging = true
+        await bot.dig(targetBlock)
+        bot._isDigging = false
+        await new Promise(r => setTimeout(r, 600))
+        await collectNearbyItems(bot, 8)
+      }
+    } catch (e) { bot._isDigging = false }
+  }
+  return countLogsInInventory() >= minLogs
 }
 
 /**
@@ -875,6 +1104,9 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
       console.log('[Wood] Chopping tree completely...')
       bot.chat('🪓 Chopping tree...')
 
+      // Water recovery before starting chopping
+      await recoverFromWater(bot)
+
       const treeLogs = findConnectedLogs(bot, logBlock, radius)
       console.log(`[Wood] Tree has ${treeLogs.length} logs`)
 
@@ -902,13 +1134,19 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
         }
 
         try {
-          // Ensure best axe equipped before each log
-          try {
-            const bestAxe = getBestAxe(bot)
-            if (bestAxe && (!bot.heldItem || !bot.heldItem.name || !bot.heldItem.name.includes('axe') || bot.heldItem.name !== bestAxe.name)) {
-              await bot.equip(bestAxe, 'hand')
+          // If axe disappeared mid-run (broken or used up), recraft
+          const haveAxe = await ensureBestAxeEquipped(bot)
+          if (!haveAxe) {
+            const restored = await ensureAxeMidRun(bot, radius)
+            if (!restored) {
+              console.log('[Wood] Could not restore axe, abort tree')
+              break
             }
-          } catch (e) {}
+          }
+          // Recover from water if needed during tree processing
+          await recoverFromWater(bot)
+          // Always re-equip axe at start of each log iteration
+          await ensureBestAxeEquipped(bot)
 
           console.log(
             `[Wood] Chopping log at ${log.position.x}, ${log.position.y}, ${log.position.z}`
@@ -927,6 +1165,8 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
                 3
               )
               await bot.pathfinder.goto(goal)
+              // After movement, re-confirm axe (movement or planting may have changed held item)
+              await ensureBestAxeEquipped(bot)
             } catch (navErr) {
               console.log('[Wood] Could not navigate to log:', navErr.message)
               continue
@@ -940,6 +1180,8 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
           }
 
           try { bot._isDigging = true } catch (e) {}
+          // Final pre-dig axe check (handles any last-second equip changes)
+          await ensureBestAxeEquipped(bot)
           await bot.dig(currentBlock)
           collected++
           console.log(`[Wood] Chopped log ${collected}/${maxBlocks}`)
@@ -958,20 +1200,16 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
       
       // Final collection pass for any missed items
       console.log('[Wood] Final collection pass...')
-      await new Promise(r => setTimeout(r, 500))
-      await collectNearbyItems(bot, 15)
+      await new Promise(r => setTimeout(r, 600))
+      await collectNearbyItems(bot, 20)
+      // Leaf decay delayed passes (capture apples & late saplings)
+      for (const delay of [4000, 8000]) {
+        await new Promise(r => setTimeout(r, delay))
+        await collectNearbyItems(bot, 20)
+      }
       
       // Re-equip axe after final collection
-      if (currentAxe && currentAxe.name.includes('axe')) {
-        try {
-          await bot.equip(currentAxe, 'hand')
-        } catch (e) {
-          const anyAxe = bot.inventory.items().find(i => i.name && i.name.includes('axe'))
-          if (anyAxe) {
-            await bot.equip(anyAxe, 'hand')
-          }
-        }
-      }
+      await ensureBestAxeEquipped(bot)
 
       treesChopped++
       
@@ -981,13 +1219,7 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
 
       // Ensure axe is equipped before moving to next tree
       console.log('[Wood] Re-equipping axe for next tree...')
-      if (axe) {
-        try {
-          await bot.equip(axe, 'hand')
-        } catch (e) {
-          console.log('[Wood] Could not re-equip axe:', e.message)
-        }
-      }
+      await ensureBestAxeEquipped(bot)
 
       const inventorySpace = bot.inventory.emptySlotCount()
       console.log(`[Wood] Inventory has ${inventorySpace} empty slots`)

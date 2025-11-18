@@ -210,6 +210,30 @@ function initStuckDetector(bot) {
         // Reset timers when idle
         lastPosition = bot.entity.position.clone()
         lastMoveTime = Date.now()
+
+        // Idle water escape: if bot is in water and not following anyone, swim to nearest dry land
+        // This prevents drowning or floating when no tasks are active.
+        try {
+          if (!bot._followingPlayer && isInWater(bot)) {
+            const target = findNearestDryLand(bot, 8)
+            if (target) {
+              const movements = new Movements(bot)
+              movements.canDig = false
+              bot.pathfinder.setMovements(movements)
+              const goal = new goals.GoalNear(target.x, target.y, target.z, 1)
+              bot.pathfinder.setGoal(goal)
+              // Small forward push once on land
+              setTimeout(() => {
+                if (!isInWater(bot)) {
+                  bot.setControlState('forward', true)
+                  setTimeout(() => bot.setControlState('forward', false), 300)
+                }
+              }, 1200)
+            }
+          }
+        } catch (e) {
+          // Ignore water recovery errors silently
+        }
         return
       }
       
@@ -277,6 +301,49 @@ function initStuckDetector(bot) {
           lastMoveTime = Date.now()
           console.log('[Movement] Path cleared, resuming task...')
         })()
+      } else if (timeSinceMove > 5000) { // Fast jump-stuck (5s) handling
+        // Detect small vertical oscillation (jump attempts) without horizontal movement
+        try {
+          if ((bot.pathfinder && typeof bot.pathfinder.isMoving === 'function' && bot.pathfinder.isMoving()) || bot._isDigging) {
+            return
+          }
+        } catch (e) {}
+
+        const feetBlock = bot.blockAt(currentPos.floored())
+        const headBlock = bot.blockAt(currentPos.offset(0, 1, 0).floored())
+        // If head block is a leaf/log or any diggable non-air, or front block blocks movement, clear a small set quickly
+        const forwardDir = bot.entity.yaw != null ? {
+          x: Math.round(Math.sin(bot.entity.yaw)),
+          z: Math.round(Math.cos(bot.entity.yaw))
+        } : { x: 0, z: 1 }
+        const frontPos = currentPos.offset(forwardDir.x, 0, forwardDir.z).floored()
+        const frontHeadPos = currentPos.offset(forwardDir.x, 1, forwardDir.z).floored()
+        const frontBlock = bot.blockAt(frontPos)
+        const frontHeadBlock = bot.blockAt(frontHeadPos)
+
+        const shouldClearHead = headBlock && headBlock.name !== 'air' && headBlock.diggable
+        const shouldClearFront = frontBlock && frontBlock.name !== 'air' && frontBlock.diggable
+        const shouldClearFrontHead = frontHeadBlock && frontHeadBlock.name !== 'air' && frontHeadBlock.diggable
+
+        if (shouldClearHead || shouldClearFront || shouldClearFrontHead) {
+          console.log('[Movement] Fast jump-stuck detected (5s no move). Clearing immediate obstruction...')
+          bot.chat('⚠️ Vast (jump) — maak snel vrij...')
+          ;(async () => {
+            const targets = []
+            if (shouldClearHead) targets.push(headBlock)
+            if (shouldClearFront) targets.push(frontBlock)
+            if (shouldClearFrontHead) targets.push(frontHeadBlock)
+            for (const blk of targets) {
+              try {
+                await bot.dig(blk)
+                await new Promise(r => setTimeout(r, 150))
+              } catch (e) {}
+            }
+            lastPosition = bot.entity.position.clone()
+            lastMoveTime = Date.now()
+            console.log('[Movement] Fast obstruction cleared.')
+          })()
+        }
       }
     } catch (e) {
       console.error('[Movement] Stuck detector error:', e.message)
@@ -285,6 +352,39 @@ function initStuckDetector(bot) {
   
   // Store interval for cleanup
   bot._stuckCheckInterval = stuckCheckInterval
+}
+
+// --- Water helpers (duplicated here for idle recovery) ---
+function isInWater(bot) {
+  try {
+    const feet = bot.blockAt(bot.entity.position.floored())
+    const head = bot.blockAt(bot.entity.position.offset(0, 1, 0).floored())
+    const waterNames = ['water', 'flowing_water']
+    return (feet && waterNames.includes(feet.name)) || (head && waterNames.includes(head.name))
+  } catch (e) { return false }
+}
+
+function findNearestDryLand(bot, maxRadius = 6) {
+  const origin = bot.entity.position.floored()
+  let best = null, bestDist = Infinity
+  for (let r = 1; r <= maxRadius; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dz = -r; dz <= r; dz++) {
+        for (let dy = -1; dy <= 2; dy++) {
+          const pos = origin.offset(dx, dy, dz)
+          const block = bot.blockAt(pos)
+          const above = bot.blockAt(pos.offset(0, 1, 0))
+          if (!block || !above) continue
+          if (block.name === 'air' || block.name.includes('water')) continue
+          if (above.name !== 'air') continue
+          const dist = origin.distanceTo(pos)
+          if (dist < bestDist) { bestDist = dist; best = pos }
+        }
+      }
+    }
+    if (best) break
+  }
+  return best
 }
 
 module.exports = {

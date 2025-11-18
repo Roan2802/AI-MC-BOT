@@ -176,7 +176,7 @@ async function plantSaplingAtTreeBase(bot, treeBase, plantedPositions, options =
     const existingWorldSaplings = findNearbyWorldSaplings(treeBase)
 
     // Plant as many saplings as we have (up to a reasonable limit)
-    const maxToPlant = Math.min(totalSaplings, 3) // Max 3 saplings per tree
+    const maxToPlant = Math.min(totalSaplings, 5) // Max 5 saplings per tree (was 3)
     
     // Helper: find nearby valid ground spots (dirt/grass/podzol with air above)
     function findAlternativeGround(base, maxRadius = 5) {
@@ -356,10 +356,37 @@ async function recoverFromWater(bot) {
  * Re-craft wooden axe mid-harvest if lost/broken.
  */
 async function ensureAxeMidRun(bot, radius) {
-  const axe = getBestAxe(bot)
-  if (axe) return true
+  const existingAxe = getBestAxe(bot)
+  if (existingAxe) return true
   console.log('[Wood] Axe missing mid-run, re-crafting...')
   bot.chat('🪓 Axe weg / stuk, opnieuw maken...')
+  // Recraft is interactive; pause stuck detector to avoid interference
+  const prevTaskFlag = bot.isDoingTask; bot.isDoingTask = false
+
+  // Helper: craft with a simple retry/backoff (handles updateSlot timeouts)
+  async function craftWithRetry(recipe, times, tableBlock) {
+    const delays = [0, 500, 1200]
+    let lastErr
+    for (let i = 0; i < delays.length; i++) {
+      try {
+        if (delays[i] > 0) await new Promise(r => setTimeout(r, delays[i]))
+        await bot.craft(recipe, times, tableBlock)
+        return true
+      } catch (e) {
+        lastErr = e
+        // try to re-open table between retries
+        try {
+          if (tableBlock) {
+            if (bot.currentWindow) { try { bot.closeWindow(bot.currentWindow) } catch (_) {} }
+            await new Promise(r => setTimeout(r, 200))
+            await bot.openBlock(tableBlock)
+          }
+        } catch (_) {}
+      }
+    }
+    if (lastErr) throw lastErr
+    return false
+  }
   // gather 5 fresh logs if needed
   const countLogsInInventory = () => bot.inventory.items().filter(i => i.name && i.name.includes('log')).reduce((s, it) => s + it.count, 0)
   if (countLogsInInventory() < 5) {
@@ -372,13 +399,34 @@ async function ensureAxeMidRun(bot, radius) {
       await craftPlanksFromLogs(bot, Math.min(3, logsItem.count))
     }
   } catch (e) {}
+  // Track if we are about to place a temporary table
+  const tableBefore = bot.findBlock({ matching: b => b && b.name === 'crafting_table', maxDistance: 6, count: 1 })
   // ensure crafting table
   const hasTable = await ensureCraftingTable(bot)
   if (!hasTable) {
     bot.chat('❌ Kan geen crafting table plaatsen voor axe')
+    // Restore task flag before exit
+    bot.isDoingTask = prevTaskFlag
     return false
   }
-  await ensureCraftingTableOpen(bot)
+  
+  // Verify table exists and is accessible
+  const craftingTableBlock = bot.findBlock({ matching: b => b && b.name === 'crafting_table', maxDistance: 6, count: 1 })
+  if (!craftingTableBlock) {
+    console.log('[Wood] Crafting table not found after placement')
+    bot.chat('❌ Crafting table verdwenen')
+    bot.isDoingTask = prevTaskFlag
+    return false
+  }
+  
+  // Open the crafting table
+  const opened = await ensureCraftingTableOpen(bot)
+  if (!opened) {
+    console.log('[Wood] Could not open crafting table for mid-run axe')
+    bot.chat('❌ Kan crafting table niet openen')
+    bot.isDoingTask = prevTaskFlag
+    return false
+  }
   // craft sticks if low
   const totalSticks = bot.inventory.items().filter(i => i.name === 'stick').reduce((s, it) => s + it.count, 0)
   const totalPlanks = bot.inventory.items().filter(i => i.name && i.name.includes('planks')).reduce((s, it) => s + it.count, 0)
@@ -386,30 +434,81 @@ async function ensureAxeMidRun(bot, radius) {
     try {
       const stickItemId = bot.registry.itemsByName.stick
       if (stickItemId) {
-        const recipes = bot.recipesFor(stickItemId.id, null, 1, null)
-        if (recipes && recipes.length > 0) await bot.craft(recipes[0], 1, null)
+        // Use crafting table for stick crafting (more reliable than inventory crafting)
+        const tableBlock = bot.findBlock({ matching: b => b && b.name === 'crafting_table', maxDistance: 6, count: 1 })
+        if (tableBlock) {
+          const recipes = bot.recipesFor(stickItemId.id, null, 1, tableBlock)
+          if (recipes && recipes.length > 0) {
+            await craftWithRetry(recipes[0], 1, tableBlock)
+            console.log('[Wood] Crafted sticks at table')
+            await new Promise(r => setTimeout(r, 300))
+          }
+        }
       }
-    } catch (e) {}
+    } catch (e) {
+      console.log('[Wood] Stick crafting error:', e.message)
+    }
   }
-  // craft axe
+  
+  // craft axe - find crafting table again to be safe
   try {
     const craftingTableBlock = bot.findBlock({ matching: b => b && b.name === 'crafting_table', maxDistance: 6, count: 1 })
+    if (!craftingTableBlock) {
+      console.log('[Wood] Crafting table disappeared before axe crafting')
+      bot.chat('❌ Crafting table weg')
+      bot.isDoingTask = prevTaskFlag
+      return false
+    }
+    
     const axeItem = bot.registry.itemsByName['wooden_axe']
-    if (axeItem && craftingTableBlock) {
+    if (axeItem) {
       const recipes = bot.recipesFor(axeItem.id, null, 1, craftingTableBlock)
       if (recipes && recipes.length > 0) {
-        await bot.craft(recipes[0], 1, craftingTableBlock)
+        await craftWithRetry(recipes[0], 1, craftingTableBlock)
         bot.chat('✅ Nieuwe houten axe klaar')
         await new Promise(r => setTimeout(r, 300))
         const newAxe = getBestAxe(bot)
         if (newAxe) await bot.equip(newAxe, 'hand')
+        // Close crafting window if open
+        if (bot.currentWindow) { try { bot.closeWindow(bot.currentWindow) } catch (_) {} }
+
+        // Reclaim temporary crafting table if we placed it
+        const tableAfter = bot.findBlock({ matching: b => b && b.name === 'crafting_table', maxDistance: 6, count: 1 })
+        if (!tableBefore && tableAfter) {
+          try {
+            console.log('[Wood] Picking up temporary crafting table...')
+            bot.chat('📦 Crafting table oppakken...')
+            // Ensure axe in hand for faster break
+            const axeNow = getBestAxe(bot)
+            if (axeNow) { try { await bot.equip(axeNow, 'hand') } catch (_) {} }
+            try { bot._isDigging = true } catch (_) {}
+            await bot.dig(tableAfter)
+            await new Promise(r => setTimeout(r, 600))
+            await collectNearbyItems(bot, 8)
+            console.log('[Wood] ✅ Crafting table collected')
+          } catch (digErr) {
+            console.log('[Wood] Could not pick up crafting table:', digErr.message)
+          } finally {
+            try { bot._isDigging = false } catch (_) {}
+          }
+        }
+
+        // Restore task flag before success return
+        bot.isDoingTask = prevTaskFlag
         return true
+      } else {
+        console.log('[Wood] No axe recipe found')
+        bot.chat('❌ Geen axe recept')
+        bot.isDoingTask = prevTaskFlag
+        return false
       }
     }
   } catch (e) {
     console.log('[Wood] Mid-run axe craft error:', e.message)
+    bot.chat('❌ Axe craft fout: ' + e.message)
   }
-  bot.chat('❌ Axe herstellen mislukt')
+  // Restore task flag before exit
+  bot.isDoingTask = prevTaskFlag
   return false
 }
 
@@ -755,78 +854,49 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
       .reduce((sum, item) => sum + (item.count || 0), 0)
 
   const ensureLogSupply = async (minLogs = 1, absolute = false) => {
-    // Enable stuck detection during log gathering
-    bot.isDoingTask = true
-
+    // Disable stuck detection during initial supply to prevent micro-nudges cancelling digs
+    const prevTaskFlag = bot.isDoingTask
+    bot.isDoingTask = false
     const startCount = countLogsInInventory()
     let attempts = 0
-
     const notEnough = () => {
       const current = countLogsInInventory()
       return absolute ? (current - startCount) < minLogs : current < minLogs
     }
-
-    if (absolute) {
-      bot.chat(`🌲 Eerst ${minLogs} logs hakken voor de bijl...`)
-    }
-
-    while (notEnough() && attempts < 8) {
+    if (absolute) bot.chat(`🌲 Logs nodig: ${minLogs}`)
+    while (notEnough() && attempts < 15) {
       attempts++
-      const nextLog = bot.findBlock({
-        matching: b => b && b.name && b.name.includes('log'),
-        maxDistance: radius,
-        count: 1
-      })
-
-      if (!nextLog) {
-        console.log('[Wood] ensureLogSupply: No log found to mine')
-        break
-      }
-
+      const nextLog = bot.findBlock({ matching: b => b && b.name && b.name.includes('log'), maxDistance: radius, count: 1 })
+      if (!nextLog) { console.log('[Wood] ensureLogSupply: No log found to mine'); break }
       try {
         const dist = bot.entity.position.distanceTo(nextLog.position)
-        if (dist > 4) {
+        if (dist > 3) {
           const movements = new Movements(bot)
+          movements.canDig = true
           bot.pathfinder.setMovements(movements)
-          const goal = new goals.GoalNear(
-            nextLog.position.x,
-            nextLog.position.y,
-            nextLog.position.z,
-            2
-          )
+          const goal = new goals.GoalNear(nextLog.position.x, nextLog.position.y, nextLog.position.z, 2)
           await bot.pathfinder.goto(goal)
         }
-      } catch (navErr) {
-        console.log('[Wood] ensureLogSupply: Navigation failed:', navErr.message)
-      }
-
+      } catch (navErr) { console.log('[Wood] ensureLogSupply: Navigation failed:', navErr.message) }
       const targetBlock = bot.blockAt(nextLog.position)
-      if (!targetBlock || !targetBlock.diggable) {
-        console.log('[Wood] ensureLogSupply: Target log no longer available')
-        continue
-      }
-
+      if (!targetBlock || !targetBlock.diggable) { console.log('[Wood] ensureLogSupply: Target log no longer available'); continue }
       try {
         bot._isDigging = true
         await bot.dig(targetBlock)
         console.log('[Wood] ensureLogSupply: Log chopped, collecting...')
-        await new Promise(r => setTimeout(r, 800))
-        await collectNearbyItems(bot, 8)
+        try {
+          const centerGoal = new goals.GoalNear(nextLog.position.x + 0.5, nextLog.position.y, nextLog.position.z + 0.5, 1)
+          await bot.pathfinder.goto(centerGoal)
+        } catch (_) {}
+        await new Promise(r => setTimeout(r, 500))
+        await collectNearbyItems(bot, 6)
+        await new Promise(r => setTimeout(r, 300))
         const gained = countLogsInInventory() - startCount
         console.log(`[Wood] ensureLogSupply: Inventory now has ${countLogsInInventory()} logs (new +${Math.max(gained,0)})`)
-        if (absolute) {
-          bot.chat(`📦 Logs verzameld: ${Math.max(gained,0)}/${minLogs}`)
-        }
-      } catch (digErr) {
-        console.log('[Wood] ensureLogSupply: Dig failed:', digErr.message)
-      } finally {
-        bot._isDigging = false
-      }
+        if (absolute) bot.chat(`📦 ${countLogsInInventory() - startCount}/${minLogs}`)
+      } catch (digErr) { console.log('[Wood] ensureLogSupply: Dig failed:', digErr.message) } finally { bot._isDigging = false }
     }
-
-    // Disable stuck detection after log gathering (re-enable later during tree chopping)
-    bot.isDoingTask = false
-
+    bot.isDoingTask = prevTaskFlag
     return absolute ? (countLogsInInventory() - startCount) >= minLogs : countLogsInInventory() >= minLogs
   }
 
@@ -842,10 +912,10 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
       console.log('[Wood] No axe found, crafting wooden axe...')
       bot.chat('🔨 Crafting wooden axe...')
 
-      // Altijd eerst 5 logs hakken voordat we de bijl craften
-      console.log('[Wood] Always chopping 5 logs before axe craft...')
-      bot.chat('🌲 Eerst 5 logs hakken voor de bijl...')
-      const hasLogs = await ensureLogSupply(5, true)
+      // Altijd eerst 3 logs hakken voordat we de bijl craften (genoeg voor table + axe)
+      console.log('[Wood] Always chopping 3 logs before axe craft (optimized)...')
+      bot.chat('🌲 Eerst 3 logs hakken voor de bijl...')
+      const hasLogs = await ensureLogSupply(3, true)
 
       if (!hasLogs) {
         console.log('[Wood] Still not enough logs for axe + crafting table')
@@ -1075,6 +1145,9 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
         `🌲 Found tree #${treesChopped + 1} at ${Math.floor(logBlock.position.x)}, ${Math.floor(logBlock.position.z)}`
       )
 
+      // Water safety check before movement
+      await recoverFromWater(bot)
+
       // Walk to tree via pathfinder
       console.log('[Wood] Walking to tree...')
       const dist = bot.entity.position.distanceTo(logBlock.position)
@@ -1134,6 +1207,9 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
         }
 
         try {
+          // Water safety check before each log
+          await recoverFromWater(bot)
+          
           // If axe disappeared mid-run (broken or used up), recraft
           const haveAxe = await ensureBestAxeEquipped(bot)
           if (!haveAxe) {
@@ -1165,6 +1241,8 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
                 3
               )
               await bot.pathfinder.goto(goal)
+              // Water safety after navigation
+              await recoverFromWater(bot)
               // After movement, re-confirm axe (movement or planting may have changed held item)
               await ensureBestAxeEquipped(bot)
             } catch (navErr) {
@@ -1197,15 +1275,31 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
 
       // Store axe before final collection
       const currentAxe = bot.heldItem
-      
-      // Final collection pass for any missed items
+
+      // Water safety before collection
+      await recoverFromWater(bot)
+
+      // Final collection pass for any missed items (adaptive, non-blocking)
       console.log('[Wood] Final collection pass...')
-      await new Promise(r => setTimeout(r, 600))
-      await collectNearbyItems(bot, 20)
-      // Leaf decay delayed passes (capture apples & late saplings)
-      for (const delay of [4000, 8000]) {
-        await new Promise(r => setTimeout(r, delay))
-        await collectNearbyItems(bot, 20)
+      console.log('[Wood] Final collection pass...')
+      // Keep stuck detection ON; only briefly pause during the first short wait to avoid false stuck
+      const prevTaskFlag = bot.isDoingTask
+      bot.isDoingTask = false
+      await new Promise(r => setTimeout(r, 400))
+      bot.isDoingTask = prevTaskFlag
+
+      // Adaptive loop: up to 3 short cycles, stop early if no new items
+      let previousInvSignature = bot.inventory.items().map(i => i.type + ':' + i.count).join('|')
+      for (let cycle = 0; cycle < 3; cycle++) {
+        await recoverFromWater(bot)
+        await collectNearbyItems(bot, 16)
+        await new Promise(r => setTimeout(r, 900))
+        const newSignature = bot.inventory.items().map(i => i.type + ':' + i.count).join('|')
+        if (newSignature === previousInvSignature) {
+          // No change this cycle -> break early
+          break
+        }
+        previousInvSignature = newSignature
       }
       
       // Re-equip axe after final collection
@@ -1213,9 +1307,13 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
 
       treesChopped++
       
-      // Plant saplings immediately after each tree (max 3)
+      // Plant saplings immediately after each tree (max 5)
       console.log('[Wood] Planting saplings at tree base...')
-      await plantSaplingAtTreeBase(bot, treeBase, plantedSaplingPositions, { minSaplingSpacing })
+      // Disable stuck detection during precise placement to avoid jitter
+      const prevTaskFlag2 = bot.isDoingTask; bot.isDoingTask = false
+      try {
+        await plantSaplingAtTreeBase(bot, treeBase, plantedSaplingPositions, { minSaplingSpacing })
+      } finally { bot.isDoingTask = prevTaskFlag2 }
 
       // Ensure axe is equipped before moving to next tree
       console.log('[Wood] Re-equipping axe for next tree...')

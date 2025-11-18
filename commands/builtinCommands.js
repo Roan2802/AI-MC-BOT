@@ -13,7 +13,8 @@ const { setHome, getHome, goHome } = require('../src/memory.js')
 const { goTo, selectSafeTarget } = require('../src/navigation.js')
 const { returnHomeAndStore } = require('../src/storage.js')
 const { smeltOres, createDriedKelp, createDriedKelpBlock, getJobQueue, buildSmartFuelPlan } = require('../src/smelting.js')
-const { harvestWood } = require('../src/wood.js')
+// Updated path after wood module relocation
+const { harvestWood } = require('../src/wood/wood.js')
 const { createCharcoal } = require('../src/smelting.js')
 const { isResourceDepleted, getWornTools, getInventoryStatus, getTimeOfDay } = require('../src/automation.js')
 
@@ -54,11 +55,13 @@ module.exports = {
    * @param {object} bot
    */
   async stop(bot) {
+    // Global stop: halt movement AND abort long-running tasks
     try {
+      const { stopAllTasks } = require('../src/task-stop.js')
       stopMovement(bot)
-      bot.chat('⛔ Stop!')
+      stopAllTasks(bot)
     } catch (e) {
-      bot.chat('Kon niet stoppen')
+      bot.chat('Kon niet volledig stoppen: ' + e.message)
     }
   },
 
@@ -575,7 +578,7 @@ module.exports = {
     const commands = [
       '!status - Toon positie en gezondheid',
       '!hello - Begroeting',
-      '!stop - Stop alle beweging',
+      '!stop - Stop alle taken & beweging',
       '!follow [naam] / !volg [naam] - Volg speler (nogmaals = stop; zonder naam = afzender)',
       '!come <naam> - Kom naar speler',
       '!stay - Blijf hier',

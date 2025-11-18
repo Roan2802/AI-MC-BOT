@@ -189,7 +189,7 @@ function createDefaultEngine(bot) {
       return depleted
     },
     action: async (b) => {
-      const { harvestWood } = require('./wood.js')
+      const { harvestWood } = require('./wood/wood.js')
       b.chat('🌲 Logs uitgeput, begin houthakking...')
       await harvestWood(b, 30, 32)
     }

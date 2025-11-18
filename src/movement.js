@@ -9,6 +9,57 @@ const pathfinderPkg = require('mineflayer-pathfinder')
 const { Movements, goals } = pathfinderPkg
 const { GoalFollow, GoalNear, GoalBlock } = goals
 
+// Global protected block registry: blocks we never dig in stuck recovery.
+// Includes utility/workstation/storage/light/interaction blocks and terrain we avoid scarring.
+const PROTECTED_BLOCKS = new Set([
+  'crafting_table',
+  'dirt',
+  'grass_block',
+  // Storage & containers
+  'chest','trapped_chest','barrel','shulker_box','ender_chest',
+  // Workstations
+  'furnace','blast_furnace','smoker','anvil','brewing_stand','enchanting_table','cartography_table','smithing_table','stonecutter','loom','fletching_table','grindstone',
+  // Utility / interaction
+  'campfire','soul_campfire','ladder','lever','button','bell',
+  // Lighting
+  'torch','wall_torch','soul_torch','soul_wall_torch',
+  // Doors & trapdoors
+  'oak_door','spruce_door','birch_door','jungle_door','acacia_door','dark_oak_door','mangrove_door','cherry_door','bamboo_door','crimson_door','warped_door',
+  'oak_trapdoor','spruce_trapdoor','birch_trapdoor','jungle_trapdoor','acacia_trapdoor','dark_oak_trapdoor','mangrove_trapdoor','cherry_trapdoor','bamboo_trapdoor','crimson_trapdoor','warped_trapdoor',
+  // Signs (standing & wall variants may share names depending on version)
+  'oak_sign','spruce_sign','birch_sign','jungle_sign','acacia_sign','dark_oak_sign','mangrove_sign','cherry_sign','bamboo_sign','crimson_sign','warped_sign'
+])
+
+function isProtectedBlockName(name) {
+  if (!name) return false
+  // Any sapling variant
+  if (name.includes('sapling')) return true
+  return PROTECTED_BLOCKS.has(name)
+}
+
+// Helper: aggressive leaf-digging movements to shorten paths through foliage
+function createLeafDigMovements(bot) {
+  const m = new Movements(bot)
+  m.canDig = true
+  m.allow1by1towers = false
+  m.scafoldingBlocks = []
+  try {
+    const leaves = [
+      'oak_leaves','spruce_leaves','birch_leaves','jungle_leaves','acacia_leaves','dark_oak_leaves',
+      'mangrove_leaves','cherry_leaves','azalea_leaves','flowering_azalea_leaves'
+    ]
+    for (const name of leaves) {
+      const blk = bot.registry?.blocksByName?.[name]
+      if (blk && m.blocksCantBreak) {
+        m.blocksCantBreak.delete(blk.id)
+      }
+    }
+  } catch (e) {
+    console.log('[Movement] Leaf movement setup error:', e.message)
+  }
+  return m
+}
+
 /**
  * Initialize pathfinder plugin on bot.
  * Must be called once at bot spawn.
@@ -42,7 +93,7 @@ function followPlayer(bot, playerName) {
     if (!player || !player.entity) {
       throw new Error(`Speler ${playerName} niet gevonden`)
     }
-    const movements = new Movements(bot)
+    const movements = createLeafDigMovements(bot)
     try { bot.setControlState && bot.setControlState('sprint', false) } catch (e) {}
     try { bot.setControlState && bot.setControlState('jump', false) } catch (e) {}
     bot.pathfinder.setMovements(movements)
@@ -76,7 +127,7 @@ function followPlayer(bot, playerName) {
       // Re-apply goal to ensure continuous following
       const dist = bot.entity.position.distanceTo(currentPlayer.entity.position)
       if (dist > 3) {
-        const movements = new Movements(bot)
+        const movements = createLeafDigMovements(bot)
         bot.pathfinder.setMovements(movements)
         const goal = new GoalFollow(currentPlayer.entity, 2)
         bot.pathfinder.setGoal(goal, true)
@@ -105,7 +156,7 @@ function goToPlayer(bot, playerName) {
       throw new Error(`Speler ${playerName} niet gevonden`)
     }
     const pos = player.entity.position
-    const movements = new Movements(bot)
+    const movements = createLeafDigMovements(bot)
     try { bot.setControlState && bot.setControlState('sprint', false) } catch (e) {}
     try { bot.setControlState && bot.setControlState('jump', false) } catch (e) {}
     bot.pathfinder.setMovements(movements)
@@ -130,7 +181,7 @@ function moveToPosition(bot, position) {
     if (!position || typeof position.x !== 'number' || typeof position.z !== 'number') {
       throw new Error('Ongeldige positie')
     }
-    const movements = new Movements(bot)
+    const movements = createLeafDigMovements(bot)
     try { bot.setControlState && bot.setControlState('sprint', false) } catch (e) {}
     try { bot.setControlState && bot.setControlState('jump', false) } catch (e) {}
     bot.pathfinder.setMovements(movements)
@@ -189,13 +240,26 @@ function stay(bot) {
 function initStuckDetector(bot) {
   let lastPosition = bot.entity.position.clone()
   let lastMoveTime = Date.now()
-  const STUCK_TIMEOUT = 15000 // 15 seconds, less aggressive
+  const STUCK_TIMEOUT = 8000 // Soft stuck threshold (was 12s) quicker response
+  const HARD_STUCK_TIMEOUT = 15000 // Hard stuck override (was 20s)
+  const FAST_JUMP_STUCK_TIMEOUT = 5000 // Jump-stuck threshold (was 6000ms)
   const STUCK_DISTANCE = 0.5 // Movement threshold
+  // Cooldowns to avoid spammy nudges/clears
+  let lastMicroNudgeTime = 0
+  let lastHardClearTime = 0
+  const MICRO_NUDGE_COOLDOWN = 4000
+  const HARD_CLEAR_COOLDOWN = 8000
+  let hardClearInProgress = false
+  let microNudgeInProgress = false
   
   // Task tracking - stuck detector only works during active tasks
   bot.isDoingTask = false
   
   console.log('[Movement] Stuck detector initialized (task-based)')
+  
+  // Track underwater time for drowning prevention
+  let underwaterStartTime = null
+  const MAX_UNDERWATER_TIME = 3000 // 3 seconds max underwater during tasks
   
   // Check every 2 seconds
   const stuckCheckInterval = setInterval(() => {
@@ -203,6 +267,59 @@ function initStuckDetector(bot) {
       if (!bot || !bot.entity) {
         clearInterval(stuckCheckInterval)
         return
+      }
+      
+      // CRITICAL: Drowning prevention during active tasks
+      if (bot.isDoingTask && isInWater(bot)) {
+        if (!underwaterStartTime) {
+          underwaterStartTime = Date.now()
+          console.log('[Movement] ⚠️ Underwater during task - monitoring...')
+        } else {
+          const underwaterDuration = Date.now() - underwaterStartTime
+          if (underwaterDuration > MAX_UNDERWATER_TIME) {
+            console.log('[Movement] 🚨 DROWNING RISK! Emergency water escape...')
+            bot.chat('🚨 Water! Escaping...')
+            // Force immediate water escape
+            ;(async () => {
+              try {
+                // Cancel current goal
+                try { bot.pathfinder.setGoal(null) } catch (e) {}
+                // Stop all movement
+                const controls = ['forward','back','left','right','sprint']
+                for (const c of controls) { try { bot.setControlState(c, false) } catch (e) {} }
+                
+                const target = findNearestDryLand(bot, 12)
+                if (target) {
+                  const movements = createLeafDigMovements(bot)
+                  movements.canDig = false
+                  movements.allow1by1towers = false
+                  bot.pathfinder.setMovements(movements)
+                  const goal = new goals.GoalNear(target.x, target.y, target.z, 1)
+                  await bot.pathfinder.goto(goal)
+                  console.log('[Movement] ✅ Escaped water, resuming task')
+                } else {
+                  // No dry land found, swim up aggressively
+                  bot.setControlState('jump', true)
+                  bot.setControlState('forward', true)
+                  await new Promise(r => setTimeout(r, 2000))
+                  bot.setControlState('jump', false)
+                  bot.setControlState('forward', false)
+                }
+                underwaterStartTime = null
+              } catch (e) {
+                console.log('[Movement] Water escape error:', e.message)
+                underwaterStartTime = null
+              }
+            })()
+            return
+          }
+        }
+      } else {
+        // Not underwater or not doing task - reset timer
+        if (underwaterStartTime) {
+          console.log('[Movement] ✅ Out of water')
+          underwaterStartTime = null
+        }
       }
       
       // ONLY check if bot is actively doing a task
@@ -217,7 +334,7 @@ function initStuckDetector(bot) {
           if (!bot._followingPlayer && isInWater(bot)) {
             const target = findNearestDryLand(bot, 8)
             if (target) {
-              const movements = new Movements(bot)
+              const movements = createLeafDigMovements(bot)
               movements.canDig = false
               bot.pathfinder.setMovements(movements)
               const goal = new goals.GoalNear(target.x, target.y, target.z, 1)
@@ -238,6 +355,14 @@ function initStuckDetector(bot) {
       }
       
       const currentPos = bot.entity.position
+
+      // If we are actively digging, treat that as progress and skip stuck logic.
+      // This prevents micro-nudges or hard clears interrupting a dig.
+      if (bot._isDigging) {
+        lastPosition = currentPos.clone()
+        lastMoveTime = Date.now()
+        return
+      }
       const distance = lastPosition.distanceTo(currentPos)
       const timeSinceMove = Date.now() - lastMoveTime
       
@@ -246,65 +371,94 @@ function initStuckDetector(bot) {
         lastPosition = currentPos.clone()
         lastMoveTime = Date.now()
       } else if (timeSinceMove > STUCK_TIMEOUT) {
-        // Skip clearing if bot is actively pathfinding or digging
-        try {
-          if ((bot.pathfinder && typeof bot.pathfinder.isMoving === 'function' && bot.pathfinder.isMoving()) || bot._isDigging) {
-            return
-          }
-        } catch (e) {}
+        // Determine if pathfinder thinks it's still moving or we are digging
+        let movingOrDigging = false
+          try {
+            // Only consider pathfinder movement; digging already short-circuited above.
+            movingOrDigging = (bot.pathfinder && typeof bot.pathfinder.isMoving === 'function' && bot.pathfinder.isMoving())
+          } catch (e) {}
 
-        // Bot is stuck DURING TASK! Break blocking blocks
-        console.log('[Movement] ⚠️ Bot stuck during task! Breaking blocking blocks...')
-        bot.chat('⚠️ Stuck! Clearing path...')
+        if (movingOrDigging && timeSinceMove < HARD_STUCK_TIMEOUT) {
+          // Soft stuck: apply a deterministic backward micro-nudge (no randomness)
+          const now = Date.now()
+          if (now - lastMicroNudgeTime < MICRO_NUDGE_COOLDOWN) return
+          if (microNudgeInProgress) return
+          lastMicroNudgeTime = now
+          console.log('[Movement] ⚠️ Soft stuck detected (no progress). Applying backward micro-nudge...')
+          try {
+            microNudgeInProgress = true
+            // Backward step + small jump to clear ledges, always moving back to avoid entering leaves ahead
+            bot.setControlState('jump', true)
+            setTimeout(() => bot.setControlState('jump', false), 280)
+            bot.setControlState('back', true)
+            setTimeout(() => bot.setControlState('back', false), 400)
+            setTimeout(() => { microNudgeInProgress = false; lastPosition = bot.entity.position.clone(); lastMoveTime = Date.now() }, 450)
+          } catch (e) {}
+          return
+        }
+
+        // Hard stuck: break surrounding blocks regardless of pathfinder state
+        const now = Date.now()
+        if (now - lastHardClearTime < HARD_CLEAR_COOLDOWN) return
+        if (hardClearInProgress) return
+        lastHardClearTime = now
+        hardClearInProgress = true
+        console.log('[Movement] 🛑 Hard stuck! Clearing surrounding 1-block ring (16 lateral blocks)...')
+        bot.chat('🛑 Hard stuck! Clearing path...')
         
         // Break 16 blocks around bot: 8 at foot level + 8 at head level
         // NOT above or below (no digging down or breaking ceiling)
         const blockingPositions = [
-          // Foot level (8 blocks around horizontally)
-          currentPos.offset(1, 0, 0).floored(),   // East
-          currentPos.offset(-1, 0, 0).floored(),  // West
-          currentPos.offset(0, 0, 1).floored(),   // South
-          currentPos.offset(0, 0, -1).floored(),  // North
-          currentPos.offset(1, 0, 1).floored(),   // Southeast
-          currentPos.offset(1, 0, -1).floored(),  // Northeast
-          currentPos.offset(-1, 0, 1).floored(),  // Southwest
-          currentPos.offset(-1, 0, -1).floored(), // Northwest
-          
-          // Head/Eye level (8 blocks around horizontally, 1 block up)
-          currentPos.offset(1, 1, 0).floored(),   // East head
-          currentPos.offset(-1, 1, 0).floored(),  // West head
-          currentPos.offset(0, 1, 1).floored(),   // South head
-          currentPos.offset(0, 1, -1).floored(),  // North head
-          currentPos.offset(1, 1, 1).floored(),   // Southeast head
-          currentPos.offset(1, 1, -1).floored(),  // Northeast head
-          currentPos.offset(-1, 1, 1).floored(),  // Southwest head
-          currentPos.offset(-1, 1, -1).floored()  // Northwest head
+          // Foot level ring (8)
+          currentPos.offset(1, 0, 0).floored(),
+          currentPos.offset(-1, 0, 0).floored(),
+          currentPos.offset(0, 0, 1).floored(),
+          currentPos.offset(0, 0, -1).floored(),
+          currentPos.offset(1, 0, 1).floored(),
+          currentPos.offset(1, 0, -1).floored(),
+          currentPos.offset(-1, 0, 1).floored(),
+          currentPos.offset(-1, 0, -1).floored(),
+          // Head level ring (8) – no blocks below feet or above head
+          currentPos.offset(1, 1, 0).floored(),
+          currentPos.offset(-1, 1, 0).floored(),
+          currentPos.offset(0, 1, 1).floored(),
+          currentPos.offset(0, 1, -1).floored(),
+          currentPos.offset(1, 1, 1).floored(),
+          currentPos.offset(1, 1, -1).floored(),
+          currentPos.offset(-1, 1, 1).floored(),
+          currentPos.offset(-1, 1, -1).floored()
         ]
         
-        // Break blocks asynchronously
+        // Break blocks asynchronously (skip fragile/valuable blocks)
         ;(async () => {
-          for (const pos of blockingPositions) {
-            try {
-              const block = bot.blockAt(pos)
-              if (block && block.diggable && block.name !== 'air') {
-                console.log(`[Movement] Breaking blocking ${block.name} at ${pos.x}, ${pos.y}, ${pos.z}`)
-                await bot.dig(block)
-                await new Promise(r => setTimeout(r, 200))
-              }
-            } catch (e) {
-              // Ignore dig errors
+          try {
+            for (const pos of blockingPositions) {
+              try {
+                const block = bot.blockAt(pos)
+                const name = block && block.name || ''
+                // Extend protected set: saplings, crafting table, dirt (avoid terrain scarring)
+                const isProtected = isProtectedBlockName(name)
+                if (block && block.diggable && name !== 'air' && !isProtected) {
+                  console.log(`[Movement] Breaking blocking ${block.name} at ${pos.x}, ${pos.y}, ${pos.z}`)
+                  await bot.dig(block)
+                  await new Promise(r => setTimeout(r, 160))
+                }
+              } catch (e) {/* ignore individual dig errors */}
             }
+          } finally {
+            // Reset stuck timer after clearing
+            lastPosition = bot.entity.position.clone()
+            lastMoveTime = Date.now()
+            hardClearInProgress = false
+            console.log('[Movement] Path cleared, resuming task...')
           }
-          
-          // Reset stuck timer after clearing
-          lastPosition = bot.entity.position.clone()
-          lastMoveTime = Date.now()
-          console.log('[Movement] Path cleared, resuming task...')
         })()
-      } else if (timeSinceMove > 5000) { // Fast jump-stuck (5s) handling
+      } else if (timeSinceMove > FAST_JUMP_STUCK_TIMEOUT) { // Fast jump-stuck (5s) handling
+        // Skip if currently digging (already handled above)
+        if (bot._isDigging) return
         // Detect small vertical oscillation (jump attempts) without horizontal movement
         try {
-          if ((bot.pathfinder && typeof bot.pathfinder.isMoving === 'function' && bot.pathfinder.isMoving()) || bot._isDigging) {
+          if ((bot.pathfinder && typeof bot.pathfinder.isMoving === 'function' && bot.pathfinder.isMoving())) {
             return
           }
         } catch (e) {}
@@ -321,12 +475,13 @@ function initStuckDetector(bot) {
         const frontBlock = bot.blockAt(frontPos)
         const frontHeadBlock = bot.blockAt(frontHeadPos)
 
-        const shouldClearHead = headBlock && headBlock.name !== 'air' && headBlock.diggable
-        const shouldClearFront = frontBlock && frontBlock.name !== 'air' && frontBlock.diggable
-        const shouldClearFrontHead = frontHeadBlock && frontHeadBlock.name !== 'air' && frontHeadBlock.diggable
+        const isProtected = n => (n && isProtectedBlockName(n.name))
+        const shouldClearHead = headBlock && headBlock.name !== 'air' && headBlock.diggable && !isProtected(headBlock)
+        const shouldClearFront = frontBlock && frontBlock.name !== 'air' && frontBlock.diggable && !isProtected(frontBlock)
+        const shouldClearFrontHead = frontHeadBlock && frontHeadBlock.name !== 'air' && frontHeadBlock.diggable && !isProtected(frontHeadBlock)
 
         if (shouldClearHead || shouldClearFront || shouldClearFrontHead) {
-          console.log('[Movement] Fast jump-stuck detected (5s no move). Clearing immediate obstruction...')
+          console.log('[Movement] Fast jump-stuck detected (6s no move). Clearing immediate obstruction...')
           bot.chat('⚠️ Vast (jump) — maak snel vrij...')
           ;(async () => {
             const targets = []

@@ -360,7 +360,10 @@ function initToolMonitor(bot) {
     }
   })
   
-  // Periodic durability check
+  // Periodic durability check with cooldown tracking
+  const lastWarningTime = {}
+  const WARNING_COOLDOWN = 60000 // Only warn once per minute per tool
+  
   setInterval(() => {
     const hand = bot.heldItem
     if (!hand) return
@@ -369,12 +372,16 @@ function initToolMonitor(bot) {
     if (!type) return
     
     const status = checkToolDurability(bot, hand)
+    const now = Date.now()
+    const lastWarn = lastWarningTime[hand.name] || 0
     
-    if (status.critical) {
+    if (status.critical && (now - lastWarn > WARNING_COOLDOWN)) {
       console.log(`[ToolManager] ⚠️ ${hand.name} is critical (${status.percentage}%)`)
       bot.chat(`⚠️ ${hand.name} almost broken (${status.percentage}%)`)
-    } else if (status.warning) {
+      lastWarningTime[hand.name] = now
+    } else if (status.warning && (now - lastWarn > WARNING_COOLDOWN)) {
       console.log(`[ToolManager] ℹ️ ${hand.name} is low (${status.percentage}%)`)
+      lastWarningTime[hand.name] = now
     }
   }, 5000) // Check every 5 seconds
 }

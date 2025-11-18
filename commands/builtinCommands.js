@@ -142,45 +142,108 @@ module.exports = {
    * @param {object} bot
    * @param {string} [resource='oak_log']
    */
-  async mine(bot, resource = 'oak_log', count = '1') {
+  async mine(bot, resource = '', count = '1') {
+    // Auto mode when no explicit resource or resource indicates all/auto
+    const autoTriggers = ['', 'auto', 'all', 'alles']
+    const lower = (resource || '').toLowerCase()
+    if (autoTriggers.includes(lower)) {
+      try {
+        const { autoMine } = require('../src/mining_adv/auto_mine.js')
+        await autoMine(bot, { radius: 32 })
+      } catch (e) {
+        bot.chat('❌ Auto mine fout: ' + e.message)
+      }
+      return
+    }
+
     const n = parseInt(count, 10) || 1
     bot.chat(`⛏️ Ik zoek naar ${resource} x${n}...`)
     try {
-      // Ensure we have an appropriate tool (axe for wood, pickaxe for stone/ore)
       const taskType = /wood|log|oak|plank/.test(resource) ? 'wood' : (/stone|ore|coal|iron/.test(resource) ? 'stone' : 'stone')
       const okTool = await ensureToolFor(bot, taskType)
-      if (!okTool) {
-        bot.chat('❌ Kon het benodigde gereedschap niet maken, stop.')
-        return
-      }
-      // If ores requested, use mineOres for multiple blocks
+      if (!okTool) { bot.chat('❌ Kon tool niet maken'); return }
       if (/ore|stone/.test(resource) || resource === 'ore') {
         const got = await mineOres(bot, 32, n)
-        bot.chat(`✅ Klaar met mijnen: ${got} blokken`) 
+        bot.chat(`✅ Klaar met mijnen: ${got} blokken`)
         return
       }
-
-      // If wood requested, delegate to harvestWood when multiple
       if (/log|wood/.test(resource)) {
         const got = await harvestWood(bot, 20, n)
         bot.chat(`✅ Klaar met hakken van hout: ${got} blokken`)
         return
       }
-
-      // Fallback: mine individual blocks up to n
       let mined = 0
       for (let i = 0; i < n; i++) {
-        try {
-          await mineResource(bot, resource, 20)
-          mined++
-        } catch (e) {
-          break
-        }
+        try { await mineResource(bot, resource, 20); mined++ } catch (e) { break }
       }
       bot.chat(`✅ Klaar: ${mined} blokken van ${resource}`)
     } catch (e) {
       bot.chat(`❌ Kon geen ${resource} vinden: ${e && e.message}`)
       console.error('[Mining] Error:', e && e.message)
+    }
+  },
+
+  /**
+   * branchmine [yLevel] [length] [branches] - Start isolated branch mining (advanced system)
+   * Does not modify or use wood harvesting modules.
+   * @param {object} bot
+   * @param {string} yLevel
+   * @param {string} length
+   * @param {string} branches
+   */
+  async branchmine(bot, yLevel = '12', length = '16', branches = '4') {
+    try {
+      const { startBranchMining, stopBranchMining, isMiningActive } = require('../src/mining_adv/manager.js')
+      if (['stop','cancel','end'].includes(String(yLevel).toLowerCase())) {
+        stopBranchMining(bot)
+        return
+      }
+      if (isMiningActive(bot)) {
+        bot.chat('⛏️ Branch mining al bezig ("!branchmine stop" om te stoppen)')
+        return
+      }
+      const y = parseInt(yLevel,10)
+      const len = parseInt(length,10)
+      const br = parseInt(branches,10)
+      bot.chat(`⛏️ Start branch mining: y=${y} len=${len} branches=${br}`)
+      startBranchMining(bot, { yLevel: y, branchLength: len, branches: br })
+    } catch (e) {
+      bot.chat('❌ Branch mining init fout: ' + e.message)
+    }
+  },
+
+  /**
+   * stairmine [targetY] [maxSteps] - Create a staircase down to target Y level.
+   * Crafts pickaxe first (stone preferred) using robust isolated logic.
+   * Usage: !stairmine 12 80  | !stairmine stop
+   */
+  async stairmine(bot, targetY = '12', maxSteps = '64') {
+    try {
+      if (['stop','cancel','end'].includes(String(targetY).toLowerCase())) {
+        bot._stairMiningStop = true
+        bot.chat('⏹️ Stop voor staircase mining aangevraagd')
+        return
+      }
+      if (bot._stairMiningActive) {
+        bot.chat('⛏️ Staircase reeds actief ("!stairmine stop" om te stoppen)')
+        return
+      }
+      bot._stairMiningActive = true
+      bot._stairMiningStop = false
+      const y = parseInt(targetY,10)
+      const steps = parseInt(maxSteps,10)
+      const { staircaseMine } = require('../src/mining_adv/strategy_staircase.js')
+      bot.chat(`⛏️ Start staircase naar y=${y} (maxSteps=${steps})`)
+      try {
+        await staircaseMine(bot, { targetY: y, maxSteps: steps, pickPreference: 'stone' })
+      } catch(e) {
+        bot.chat('❌ Staircase error: ' + e.message)
+      } finally {
+        bot._stairMiningActive = false
+        bot._stairMiningStop = false
+      }
+    } catch (e) {
+      bot.chat('❌ Stairmine init fout: ' + e.message)
     }
   },
 

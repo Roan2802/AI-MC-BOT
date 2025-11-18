@@ -225,6 +225,7 @@ async function smeltOres(bot, radius = 20) {
   const furnaceBlock = await ensureFurnaceOrFind(bot, radius)
   if (!furnaceBlock) throw new Error('no_furnace')
 
+  console.log('[Smelting] Opening furnace...')
   let furnace
   try {
     furnace = await (bot.openFurnace ? bot.openFurnace(furnaceBlock) : bot.openContainer(furnaceBlock))
@@ -232,7 +233,6 @@ async function smeltOres(bot, radius = 20) {
     furnace = await bot.openContainer(furnaceBlock)
   }
 
-  await ensureFuel(bot)
   const inv = bot.inventory.items()
   const ores = inv.filter(i => i.name && (i.name.includes('ore') || i.name.startsWith('raw_')))
   if (ores.length === 0) {
@@ -241,28 +241,91 @@ async function smeltOres(bot, radius = 20) {
     return { smelted: 0, failed: 0 }
   }
 
-  for (const o of ores) {
-    try { await furnace.deposit(o.type, null, o.count) } catch (_) {}
+  // Deposit fuel first (planks, coal, charcoal, etc.)
+  const fuel = inv.find(i => i.name && (i.name === 'coal' || i.name === 'charcoal' || i.name.includes('planks') || i.name === 'dried_kelp_block'))
+  if (fuel) {
+    const fuelNeeded = Math.ceil(ores.reduce((s, o) => s + o.count, 0) / 8) // Planks smelt ~1.5 items each
+    const fuelAmount = Math.min(fuel.count, Math.max(1, fuelNeeded))
+    console.log(`[Smelting] Adding ${fuelAmount} ${fuel.name} as fuel`)
+    try { 
+      await furnace.putFuel(fuel.type, null, fuelAmount)
+      await new Promise(r => setTimeout(r, 300))
+    } catch(e) { 
+      console.log('[Smelting] Fuel deposit error:', e.message) 
+    }
+  } else {
+    console.log('[Smelting] WARNING: No fuel found!')
   }
 
+  // Deposit ores
+  let totalOres = 0
+  for (const o of ores) {
+    try { 
+      console.log(`[Smelting] Adding ${o.count} ${o.name} to furnace`)
+      await furnace.putInput(o.type, null, o.count)
+      totalOres += o.count
+      await new Promise(r => setTimeout(r, 200))
+    } catch(e) { 
+      console.log('[Smelting] Ore deposit error:', e.message) 
+    }
+  }
+
+  bot.chat(`🔥 Smelting ${totalOres} ores, wachten...`)
+  
   let smelted = 0
   const start = Date.now()
   const TIMEOUT = 180000
+  let lastOutput = 0
+  
   while (Date.now() - start < TIMEOUT) {
     try {
-      const output = furnace.containerItems()[2]
-      if (output && output.count > 0) {
-        await furnace.takeOutput(2, output.count)
-        smelted += output.count
+      const output = furnace.outputItem()
+      if (output && output.count > lastOutput) {
+        console.log(`[Smelting] Output: ${output.count} ${output.name}`)
+        lastOutput = output.count
       }
-    } catch (_) {}
-    const hasInput = furnace.containerItems().some(it => it && it.type && it.type !== 0)
-    if (!hasInput) break
-    await new Promise(r => setTimeout(r, 1500))
+      
+      if (output && output.count > 0) {
+        await furnace.takeOutput()
+        smelted += output.count
+        lastOutput = 0
+        console.log(`[Smelting] Collected ${smelted} items so far`)
+      }
+    } catch(e) { 
+      console.log('[Smelting] Output check error:', e.message) 
+    }
+    
+    // Check if furnace still has items
+    const input = furnace.inputItem()
+    const fuelItem = furnace.fuelItem()
+    const hasInput = input && input.count > 0
+    const hasFuel = fuelItem && fuelItem.count > 0
+    
+    if (!hasInput) {
+      console.log('[Smelting] No more input, finishing up...')
+      await new Promise(r => setTimeout(r, 2000)) // Wait for last items
+      break
+    }
+    
+    if (!hasFuel && hasInput) {
+      bot.chat('⚠️ Fuel op! Kan niet verder smelten')
+      break
+    }
+    
+    await new Promise(r => setTimeout(r, 2000))
   }
 
+  // Final collection
+  try {
+    const output = furnace.outputItem()
+    if (output && output.count > 0) {
+      await furnace.takeOutput()
+      smelted += output.count
+    }
+  } catch(_) {}
+
   try { furnace.close() } catch (_) {}
-  bot.chat(`Smelten klaar: ${smelted} items`)
+  bot.chat(`✅ Smelten klaar: ${smelted} items`)
   return { smelted, failed: 0 }
 }
 

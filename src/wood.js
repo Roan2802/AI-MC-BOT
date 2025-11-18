@@ -1118,6 +1118,12 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
     const plantedSaplingPositions = [] // Track planted saplings for spacing
     
     while (collected < maxBlocks) {
+      // Global early stop: if no empty inventory slots, stop harvesting immediately.
+      if (bot.inventory.emptySlotCount() === 0) {
+        console.log('[Wood] Inventory completely full (no free slots). Stopping harvest early.')
+        bot.chat('🎒 Inventory vol (geen vrije slots) — stoppen met hout hakken')
+        break
+      }
       if (treesChopped >= (options.maxTrees ?? 500)) {
         console.log('[Wood] Max tree limit reached for this run')
         break
@@ -1198,11 +1204,12 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
         }
 
         const emptySlots = bot.inventory.emptySlotCount()
-        if (emptySlots < inventoryBufferSlots) {
-          console.log(
-            `[Wood] Inventory low on space (${emptySlots} slots). Stopping log chopping loop.`
-          )
-          bot.chat('🎒 Inventory full, stopping harvest')
+        // Stop chopping this tree immediately if no free slots remain
+        if (emptySlots === 0) {
+          console.log('[Wood] Inventory full (0 empty slots) — aborting current tree.')
+          bot.chat('🎒 Inventory vol — boom afronden en stoppen')
+          // Force exit of log loop & outer harvesting by setting collected to maxBlocks
+          collected = maxBlocks
           break
         }
 
@@ -1322,9 +1329,10 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
       const inventorySpace = bot.inventory.emptySlotCount()
       console.log(`[Wood] Inventory has ${inventorySpace} empty slots`)
 
-      if (inventorySpace < 5) {
-        console.log('[Wood] Inventory nearly full, stopping')
-        bot.chat('🎒 Inventory full, stopping harvest')
+      // Final stop condition based strictly on zero empty slots (not partial stack fill)
+      if (inventorySpace === 0) {
+        console.log('[Wood] Inventory full (0 empty slots) — stopping harvesting loop')
+        bot.chat('🎒 Inventory vol — stoppen')
         break
       }
     }

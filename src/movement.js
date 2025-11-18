@@ -48,7 +48,9 @@ function createLeafDigMovements(bot) {
       'oak_leaves','spruce_leaves','birch_leaves','jungle_leaves','acacia_leaves','dark_oak_leaves',
       'mangrove_leaves','cherry_leaves','azalea_leaves','flowering_azalea_leaves'
     ]
-    for (const name of leaves) {
+    // Also allow digging dirt and grass for pathfinding to logs
+    const pathBlocks = [...leaves, 'dirt', 'grass_block']
+    for (const name of pathBlocks) {
       const blk = bot.registry?.blocksByName?.[name]
       if (blk && m.blocksCantBreak) {
         m.blocksCantBreak.delete(blk.id)

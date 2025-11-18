@@ -333,6 +333,12 @@ function initToolMonitor(bot) {
   
   // Listen for tool breaks
   bot.on('itemDrop', async (entity) => {
+    // Skip if bot is doing a task (auto mining, etc.)
+    if (bot.isDoingTask) {
+      console.log('[ToolManager] Tool break detected but bot is doing task, skipping auto-replace')
+      return
+    }
+    
     // This event fires when tools break and disappear
     const hand = bot.heldItem
     if (!hand) {

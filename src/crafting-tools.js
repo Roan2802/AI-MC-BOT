@@ -175,22 +175,113 @@ async function tryCraft(bot, itemName, amount = 1, fallbackNames = []) {
  */
 async function ensureWoodenPickaxe(bot) {
   if (hasPickaxe(bot)) return true
-  
   console.log('[Crafting] Attempting to craft wooden pickaxe...')
-  
+
+  // Helper counters
+  const count = (frag) => bot.inventory.items().filter(i => i.name && i.name.includes(frag)).reduce((s,it)=>s+it.count,0)
+  const has = name => bot.inventory.items().some(i => i.name === name)
+
+  // Gather logs if we lack planks/sticks
+  async function gatherLogs(minLogs = 3) {
+    const pathfinderPkg = require('mineflayer-pathfinder')
+    const { Movements, goals } = pathfinderPkg
+    const { createLeafDigMovements } = require('./movement.js')
+    let attempts = 0
+    while (count('log') < minLogs && attempts < 10) {
+      attempts++
+      const logBlock = bot.findBlock({ matching: b => b && b.name && b.name.includes('log'), maxDistance: 24, count:1 })
+      if (!logBlock) break
+      try {
+        const dist = bot.entity.position.distanceTo(logBlock.position)
+        if (dist > 3) {
+          const movements = createLeafDigMovements(bot)
+          bot.pathfinder.setMovements(movements)
+          const goal = new goals.GoalNear(logBlock.position.x, logBlock.position.y, logBlock.position.z, 1.5)
+          await bot.pathfinder.goto(goal)
+        }
+        const blk = bot.blockAt(logBlock.position)
+        if (blk && blk.diggable) {
+          const dropPos = blk.position.clone()
+          bot._isDigging = true
+          await bot.dig(blk)
+          bot._isDigging = false
+          // Move closer to drop position to pick up items
+          await new Promise(r=>setTimeout(r,200))
+          try {
+            const goal = new goals.GoalNear(dropPos.x, dropPos.y, dropPos.z, 1)
+            await bot.pathfinder.goto(goal)
+          } catch(e){}
+          // Wait for pickup
+          await new Promise(r=>setTimeout(r,500))
+        }
+      } catch(e){ bot._isDigging = false }
+    }
+  }
+
+  // Craft planks & sticks if missing
+  if (count('planks') < 3 || count('stick') < 2) {
+    if (count('planks') < 3 || count('stick') < 2) {
+      if (count('log') < 2) await gatherLogs(3)
+    }
+    // Craft planks from logs (use up to 3 logs)
+    try {
+      const { craftPlanksFromLogs, craftSticks } = require('./crafting-recipes.js')
+      const logsToUse = Math.min(count('log'), 3)
+      if (logsToUse > 0 && count('planks') < 3) {
+        await craftPlanksFromLogs(bot, logsToUse)
+        await new Promise(r=>setTimeout(r,200))
+      }
+      if (count('stick') < 2 && count('planks') >= 2) {
+        await craftSticks(bot, 1)
+        await new Promise(r=>setTimeout(r,200))
+      }
+    } catch(e){ console.log('[Crafting] Pre-craft error (planks/sticks):', e.message) }
+  }
+
+  // Ensure crafting table (craft & place if absent)
+  const tableBlock = bot.findBlock({ matching: b => b && b.name === 'crafting_table', maxDistance:6, count:1 })
+  if (!tableBlock) {
+    // Craft table if we have 4 planks and none in inventory
+    if (!has('crafting_table') && count('planks') >= 4) {
+      try {
+        const item = bot.registry.itemsByName['crafting_table']
+        if (item) {
+          const recipes = bot.recipesFor(item.id, null, 1, null)
+          if (recipes && recipes.length > 0) {
+            await bot.craft(recipes[0], 1)
+            await new Promise(r=>setTimeout(r,200))
+          }
+        }
+      } catch(e){ console.log('[Crafting] Crafting table craft failed:', e.message) }
+    }
+    // Place table if we have it
+    const tableItem = bot.inventory.items().find(i => i.name === 'crafting_table')
+    if (tableItem) {
+      try {
+        await bot.equip(tableItem,'hand')
+        const ground = bot.blockAt(bot.entity.position.offset(0,-1,0))
+        if (ground) await bot.placeBlock(ground,{x:0,y:1,z:0})
+        await new Promise(r=>setTimeout(r,300))
+      } catch(e){ console.log('[Crafting] Could not place crafting table:', e.message) }
+    }
+  }
+
+  // Refresh materials after pre-crafting
   const planks = bot.inventory.items().find(i => i.name && i.name.includes('planks'))
   const sticks = bot.inventory.items().find(i => i.name === 'stick')
-  
-  if (!planks || !sticks) {
-    console.log('[Crafting] Insufficient materials for pickaxe')
+  if (!planks || planks.count < 3 || !sticks || sticks.count < 2) {
+    console.log('[Crafting] Insufficient materials for pickaxe after prep')
     return false
   }
-  
+
   try {
-    return await tryCraft(bot, 'wooden_pickaxe', 1, ['pickaxe', 'oak_pickaxe'])
+    const ok = await tryCraft(bot, 'wooden_pickaxe', 1, ['pickaxe'])
+    return ok
   } catch (e) {
     console.error('[Crafting] Wooden pickaxe craft failed:', e.message)
     return false
+  } finally {
+    bot._isDigging = false
   }
 }
 

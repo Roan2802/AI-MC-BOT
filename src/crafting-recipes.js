@@ -56,14 +56,11 @@ async function craftPlanksFromLogs(bot, logsToUse = 1) {
       return 0
     }
 
-    // Close any existing window first
-    if (bot.currentWindow) {
-      bot.closeWindow(bot.currentWindow)
-      await new Promise(r => setTimeout(r, 200))
-    }
-
+    // DON'T close window - let caller manage it (important for multi-step crafting)
+    // If crafting table is open, use it; otherwise craft in inventory
+    const craftingTable = bot.currentWindow ? bot.findBlock({ matching: b => b && b.name === 'crafting_table', maxDistance: 6, count: 1 }) : null
     const toCraft = Math.min(logsToUse, logs.count)
-    await bot.craft(recipes[0], toCraft, null)
+    await bot.craft(recipes[0], toCraft, craftingTable)
     console.log(`[Crafting] Crafted ${toCraft * 4} planks from ${toCraft} logs`)
     return toCraft * 4
   } catch (e) {
@@ -95,14 +92,11 @@ async function craftSticks(bot, count = 4) {
       return 0
     }
 
-    // Close any existing window first
-    if (bot.currentWindow) {
-      bot.closeWindow(bot.currentWindow)
-      await new Promise(r => setTimeout(r, 200))
-    }
-
-    const toCraft = Math.min(count, Math.floor(planks.count / 2))
-    await bot.craft(recipes[0], toCraft, null)
+    // DON'T close window - let caller manage it (important for multi-step crafting)
+    // If crafting table is open, use it; otherwise craft in inventory
+    const craftingTable = bot.currentWindow ? bot.findBlock({ matching: b => b && b.name === 'crafting_table', maxDistance: 6, count: 1 }) : null
+    const toCraft = Math.floor(planks.count / 2)
+    await bot.craft(recipes[0], toCraft, craftingTable)
     console.log(`[Crafting] Crafted ${toCraft * 4} sticks`)
     return toCraft * 4
   } catch (e) {

@@ -943,21 +943,8 @@ async function harvestWood(bot, radius = 50, maxBlocks = 32, options = {}) {
           await bot.dig(currentBlock)
           collected++
           console.log(`[Wood] Chopped log ${collected}/${maxBlocks}`)
-          
-          // Store current axe before collecting
-          const currentAxe = bot.heldItem
-          
-          // Collect drops immediately after each log
-          await new Promise(r => setTimeout(r, 800))
-          await collectNearbyItems(bot, 8)
-          
-          // Re-equip best axe after collecting items
-          try {
-            const bestAxeAfter = getBestAxe(bot)
-            if (bestAxeAfter) {
-              await bot.equip(bestAxeAfter, 'hand')
-            }
-          } catch (e) {}
+          // Delay collection until entire tree is finished (no per-log pickup)
+          await new Promise(r => setTimeout(r, 200))
         } catch (digErr) {
           console.log('[Wood] Error chopping log:', digErr.message)
           collected++

@@ -358,9 +358,9 @@ function initStuckDetector(bot) {
       
       const currentPos = bot.entity.position
 
-      // If we are actively digging, treat that as progress and skip stuck logic.
-      // This prevents micro-nudges or hard clears interrupting a dig.
-      if (bot._isDigging) {
+      // If we are actively digging or placing furnace, treat that as progress and skip stuck logic.
+      // This prevents micro-nudges or hard clears interrupting a dig or furnace placement.
+      if (bot._isDigging || bot._placingFurnace) {
         lastPosition = currentPos.clone()
         lastMoveTime = Date.now()
         return

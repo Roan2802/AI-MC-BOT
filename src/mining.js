@@ -93,7 +93,7 @@ async function mineResource(bot, resourceType, radius = 20) {
       return
     }
 
-    // Equip appropriate tool (axe for wood, pickaxe for stone) if available
+    // ALWAYS equip best pickaxe for ores/stone BEFORE digging
     try {
       const inv = bot.inventory.items()
       const name = (fresh.name || '').toLowerCase()
@@ -101,11 +101,19 @@ async function mineResource(bot, resourceType, radius = 20) {
         const axe = inv.find(it => it.name && it.name.includes('axe'))
         if (axe) await bot.equip(axe, 'hand')
       } else {
-        const pick = inv.find(it => it.name && it.name.includes('pickaxe'))
-        if (pick) await bot.equip(pick, 'hand')
+        // For ores/stone: ALWAYS prefer iron > stone > wooden pickaxe
+        const ironPick = inv.find(it => it.name === 'iron_pickaxe')
+        const stonePick = inv.find(it => it.name === 'stone_pickaxe')
+        const woodPick = inv.find(it => it.name === 'wooden_pickaxe')
+        const pick = ironPick || stonePick || woodPick
+        if (pick) {
+          await bot.equip(pick, 'hand')
+          await new Promise(r => setTimeout(r, 200))
+          console.log(`[Mining] Equipped ${pick.name} for mining ${fresh.name}`)
+        }
       }
     } catch (e) {
-      // ignore equip errors
+      console.log('[Mining] Equip error:', e.message)
     }
 
     await bot.dig(fresh)
@@ -235,4 +243,4 @@ async function mineOres(bot, radius = 32, maxBlocks = 16) {
   return mined
 }
 
-module.exports = { mineResource, mineOres }
+module.exports = { mineResource, mineOres, findConnectedOres }

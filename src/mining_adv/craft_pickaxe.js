@@ -114,7 +114,12 @@ async function ensurePickaxePrepared(bot, preferred = 'stone') {
     }
     // Fallback / explicit wooden pickaxe sequence
     if (!crafted) {
-      console.log('[CraftPickaxe] Stone pickaxe not crafted, trying wooden pickaxe...')
+      // Log message afhankelijk van of stone pickaxe echt geprobeerd is
+      if (preferred === 'stone') {
+        console.log('[CraftPickaxe] Stone pickaxe niet gelukt, probeer wooden pickaxe...')
+      } else {
+        console.log('[CraftPickaxe] Preparing wooden pickaxe (stone skip)')
+      }
       
       // Check if we need more materials
       const currentPlanks = countItem(bot,'planks')
@@ -229,14 +234,20 @@ async function ensurePickaxePrepared(bot, preferred = 'stone') {
     if (bot.currentWindow) { try { bot.closeWindow(bot.currentWindow) } catch(_){} }
 
     // Reclaim temporary table if we placed it
-    const tableAfter = bot.findBlock({ matching: b => b && b.name==='crafting_table', maxDistance:6, count:1 })
-    if (!hadTableBefore && tableAfter) {
-      try {
-        bot._isDigging = true
-        await bot.dig(tableAfter)
-        bot._isDigging = false
-        await new Promise(r=>setTimeout(r,500))
-      } catch(e) { bot._isDigging = false }
+    // Safely reclaim temporary crafting table only if it still exists
+    try {
+      const tableAfter = bot.findBlock({ matching: b => b && b.name==='crafting_table', maxDistance:6, count:1 })
+      if (!hadTableBefore && tableAfter) {
+        if (tableAfter.diggable) {
+          bot._isDigging = true
+          await bot.dig(tableAfter)
+          bot._isDigging = false
+          await new Promise(r=>setTimeout(r,500))
+        }
+      }
+    } catch(e) {
+      bot._isDigging = false
+      console.log('[CraftPickaxe] Veilig genegeerde table reclaim error:', e.message)
     }
 
     // Equip

@@ -267,21 +267,89 @@ async function ensureWoodenPickaxe(bot) {
   }
 
   // Refresh materials after pre-crafting
-  const planks = bot.inventory.items().find(i => i.name && i.name.includes('planks'))
+  const allPlanks = bot.inventory.items().filter(i => i.name && i.name.includes('planks'))
+  const planks = allPlanks.length > 0 ? allPlanks[0] : null
+  const totalPlanks = allPlanks.reduce((sum, item) => sum + item.count, 0)
   const sticks = bot.inventory.items().find(i => i.name === 'stick')
+  
+  console.log('[CraftPickaxe] All planks in inventory:', allPlanks.map(p => `${p.name}:${p.count}`).join(', '))
+  console.log('[CraftPickaxe] Total planks:', totalPlanks)
+  console.log('[CraftPickaxe] Planks for crafting:', planks ? `${planks.name}:${planks.count}` : 'none')
+  console.log('[CraftPickaxe] Sticks:', sticks ? `${sticks.name}:${sticks.count}` : 'none')
+  
   if (!planks || planks.count < 3 || !sticks || sticks.count < 2) {
-    console.log('[Crafting] Insufficient materials for pickaxe after prep')
+    console.log('[CraftPickaxe] Insufficient materials for pickaxe after prep')
+    return false
+  }
+
+  // Re-find crafting table (might have been placed above)
+  let craftingTable = bot.findBlock({ matching: b => b && b.name === 'crafting_table', maxDistance:6, count:1 })
+  if (!craftingTable) {
+    console.log('[CraftPickaxe] No crafting table found')
     return false
   }
 
   try {
-    const ok = await tryCraft(bot, 'wooden_pickaxe', 1, ['pickaxe'])
-    return ok
+    console.log('[CraftPickaxe] Opening crafting table for wooden pickaxe...')
+    await bot.openBlock(craftingTable)
+    await new Promise(r => setTimeout(r, 300))
+    
+    if (!bot.currentWindow) {
+      console.log('[CraftPickaxe] Failed to open crafting table window')
+      return false
+    }
+    
+    console.log('[CraftPickaxe] Looking for recipes, window type:', bot.currentWindow.type)
+    
+    // Get the SPECIFIC plank type from inventory (oak_planks, birch_planks, etc.)
+    const allPlanks = bot.inventory.items().filter(i => i.name && i.name.includes('planks'))
+    if (allPlanks.length === 0) {
+      console.log('[CraftPickaxe] No planks found in inventory')
+      if (bot.currentWindow) bot.closeWindow(bot.currentWindow)
+      return false
+    }
+    
+    const plankItem = allPlanks[0] // Use first available plank type
+    console.log('[CraftPickaxe] Using plank type:', plankItem.name)
+    
+    // Get wooden_pickaxe item ID
+    const pickaxeItem = bot.registry.itemsByName['wooden_pickaxe']
+    if (!pickaxeItem) {
+      console.log('[CraftPickaxe] wooden_pickaxe not found in registry')
+      if (bot.currentWindow) bot.closeWindow(bot.currentWindow)
+      return false
+    }
+    
+    // Get recipes using the SPECIFIC plank item ID (not generic planks)
+    let recipes = bot.recipesFor(pickaxeItem.id, null, 1, craftingTable)
+    console.log('[CraftPickaxe] Recipes found with table:', recipes ? recipes.length : 0)
+    
+    if (!recipes || recipes.length === 0) {
+      console.log('[CraftPickaxe] No recipes found for wooden_pickaxe')
+      console.log('[CraftPickaxe] Debug: pickaxe ID:', pickaxeItem.id, 'plank type:', plankItem.name)
+      // Close window
+      if (bot.currentWindow) bot.closeWindow(bot.currentWindow)
+      return false
+    }
+    
+    // Craft with the table
+    console.log('[CraftPickaxe] Crafting wooden pickaxe...')
+    await bot.craft(recipes[0], 1, craftingTable)
+    console.log('[CraftPickaxe] ✅ Crafted wooden pickaxe')
+    
+    // Close window
+    if (bot.currentWindow) {
+      bot.closeWindow(bot.currentWindow)
+      await new Promise(r => setTimeout(r, 200))
+    }
+    
+    return true
   } catch (e) {
-    console.error('[Crafting] Wooden pickaxe craft failed:', e.message)
+    console.error('[CraftPickaxe] Wooden pickaxe craft error:', e.message)
+    if (bot.currentWindow) {
+      try { bot.closeWindow(bot.currentWindow) } catch(_) {}
+    }
     return false
-  } finally {
-    bot._isDigging = false
   }
 }
 

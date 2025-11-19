@@ -72,7 +72,7 @@ async function craftPlanksFromLogs(bot, logsToUse = 1) {
 /**
  * Craft sticks from planks
  */
-async function craftSticks(bot, count = 4) {
+async function craftSticks(bot, craftCount = 1) {
   try {
     let planks = bot.inventory.items().find(i => i && i.name && i.name.includes('planks'))
     if (!planks) {
@@ -95,7 +95,11 @@ async function craftSticks(bot, count = 4) {
     // DON'T close window - let caller manage it (important for multi-step crafting)
     // If crafting table is open, use it; otherwise craft in inventory
     const craftingTable = bot.currentWindow ? bot.findBlock({ matching: b => b && b.name === 'crafting_table', maxDistance: 6, count: 1 }) : null
-    const toCraft = Math.floor(planks.count / 2)
+    
+    // Craft ONLY the requested amount (each craft = 4 sticks from 2 planks)
+    const toCraft = Math.min(craftCount, Math.floor(planks.count / 2))
+    console.log(`[Crafting] Crafting ${toCraft}x sticks recipe (${toCraft * 4} sticks from ${toCraft * 2} planks)`)
+    
     await bot.craft(recipes[0], toCraft, craftingTable)
     console.log(`[Crafting] Crafted ${toCraft * 4} sticks`)
     return toCraft * 4

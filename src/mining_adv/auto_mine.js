@@ -65,9 +65,10 @@ async function craftFurnaceIfNeeded(bot) {
   try {
     const furnaceItem = bot.registry.itemsByName.furnace
     if (!furnaceItem) return null
-    const recipes = bot.recipesFor(furnaceItem.id, null, 1, bot.findBlock({ matching: b=>b && b.name==='crafting_table', maxDistance:6, count:1 }))
+    const table = bot.findBlock({ matching: b=>b && b.name==='crafting_table', maxDistance:6, count:1 })
+    const recipes = bot.recipesFor(furnaceItem.id, null, 1, table)
     if (recipes && recipes.length > 0) {
-      await bot.craft(recipes[0], 1)
+      await bot.craft(recipes[0], 1, table)
       bot.chat('✅ Furnace gecraft')
     }
   } catch(e){ 
@@ -391,7 +392,7 @@ async function mineOreVein(bot, startBlock, oreName) {
     try {
       if (!e || !e.position) return false
       if (e.position.distanceTo(bot.entity.position) > 8) return false
-      return e.displayName === 'Item' || e.objectType === 'Item'
+      return e.displayName === 'Item' || e.name === 'item'
     } catch(_) { return false }
   })
   

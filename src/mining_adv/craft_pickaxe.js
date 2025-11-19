@@ -71,16 +71,36 @@ async function ensurePickaxePrepared(bot, preferred = 'stone') {
     if (!opened) { bot.chat('❌ Kan crafting table niet openen'); return false }
 
     // NOW craft materials (table is open, all crafting uses the table)
-    // Make planks from logs (use up to 3)
-    const logsToUse = Math.min(countItem(bot,'log'),3)
+    console.log('[CraftPickaxe] Starting material crafting...')
+    console.log('[CraftPickaxe] Initial: logs=', countItem(bot,'log'), 'planks=', countItem(bot,'planks'), 'sticks=', countItem(bot,'stick'))
+    
+    // Make planks from logs - need at least 5 planks total (3 for pickaxe + 2 for sticks)
+    const logsToUse = Math.min(countItem(bot,'log'), 2) // 2 logs = 8 planks
     if (logsToUse > 0) {
-      bot.chat(`🪵 Planks craften (${logsToUse} logs)`)
-      try { await craftPlanksFromLogs(bot, logsToUse) } catch(e){ bot.chat('⚠️ Plank craft mislukt') }
+      console.log(`[CraftPickaxe] Crafting planks from ${logsToUse} logs...`)
+      for (let i = 0; i < logsToUse; i++) {
+        try { 
+          await craftPlanksFromLogs(bot, 1)
+          console.log(`[CraftPickaxe] Crafted planks ${i+1}/${logsToUse}, now have ${countItem(bot,'planks')} planks`)
+        } catch(e){ console.log('[CraftPickaxe] Plank craft error:', e.message) }
+      }
     }
-    // Craft sticks if low (<4) - need extra for future stone pickaxe!
-    if (countItem(bot,'stick') < 4 && countItem(bot,'planks') >= 2) {
-      bot.chat('🔧 Sticks craften')
-      try { await craftSticks(bot,2) } catch(e){ bot.chat('⚠️ Stick craft mislukt') }
+    
+    console.log('[CraftPickaxe] After planks: planks=', countItem(bot,'planks'), 'sticks=', countItem(bot,'stick'))
+    
+    // Craft sticks if low (<2) - need 2 for pickaxe
+    const sticksNeeded = countItem(bot,'stick') < 2
+    const planksAvailable = countItem(bot,'planks') >= 2
+    console.log(`[CraftPickaxe] Sticks check: need=${sticksNeeded}, have planks=${planksAvailable}`)
+    
+    if (sticksNeeded && planksAvailable) {
+      console.log('[CraftPickaxe] Crafting 1x sticks (4 sticks from 2 planks)...')
+      try { 
+        await craftSticks(bot, 1)
+        console.log(`[CraftPickaxe] Crafted sticks, now have ${countItem(bot,'stick')} sticks and ${countItem(bot,'planks')} planks`)
+      } catch(e){ 
+        console.log('[CraftPickaxe] Stick craft error:', e.message)
+      }
     }
 
     // Try stone pickaxe if we have cobblestone
@@ -94,14 +114,24 @@ async function ensurePickaxePrepared(bot, preferred = 'stone') {
     }
     // Fallback / explicit wooden pickaxe sequence
     if (!crafted) {
+      console.log('[CraftPickaxe] Stone pickaxe not crafted, trying wooden pickaxe...')
+      
+      // Check if we need more materials
+      const currentPlanks = countItem(bot,'planks')
+      const currentSticks = countItem(bot,'stick')
+      const currentLogs = countItem(bot,'log')
+      
+      console.log(`[CraftPickaxe] Current materials: planks=${currentPlanks}, sticks=${currentSticks}, logs=${currentLogs}`)
+      
       // If sticks missing, try crafting them now (requires planks)
-      if (countItem(bot,'stick') < 4 && countItem(bot,'planks') >= 2) {
+      if (currentSticks < 2 && currentPlanks >= 2) {
         bot.chat('🔧 Sticks craften voor wooden pickaxe')
-        try { await craftSticks(bot,2) } catch(e){ bot.chat('⚠️ Stick craft mislukt') }
+        try { await craftSticks(bot,1) } catch(e){ bot.chat('⚠️ Stick craft mislukt') }
       }
+      
       // If planks still insufficient, convert remaining logs
-      if (countItem(bot,'planks') < 3 && countItem(bot,'log') > 0) {
-        const moreLogs = Math.min(countItem(bot,'log'), 3 - countItem(bot,'planks'))
+      if (countItem(bot,'planks') < 3 && currentLogs > 0) {
+        const moreLogs = Math.min(currentLogs, 1) // 1 log = 4 planks, should be enough
         if (moreLogs > 0) {
           bot.chat(`🪵 Extra planks craften (${moreLogs} logs)`) 
           try { await craftPlanksFromLogs(bot, moreLogs) } catch(e){ bot.chat('⚠️ Plank craft mislukt') }
@@ -112,11 +142,84 @@ async function ensurePickaxePrepared(bot, preferred = 'stone') {
       const finalPlanks = countItem(bot,'planks')
       const finalSticks = countItem(bot,'stick')
       
+      console.log(`[CraftPickaxe] Final materials after extra crafting: planks=${finalPlanks}, sticks=${finalSticks}`)
+      console.log(`[CraftPickaxe] Wooden pickaxe needs: 3 planks + 2 sticks`)
+      
       if (finalPlanks >= 3 && finalSticks >= 2) {
         bot.chat('🔨 Wooden pickaxe craft poging...')
-        const ok = await ensureWoodenPickaxe(bot)
-        crafted = ok
-        if (!ok) bot.chat('❌ Wooden pickaxe craft mislukt')
+        
+        // Direct craft instead of using external function
+        try {
+          const craftingTable = bot.findBlock({ matching: b => b && b.name==='crafting_table', maxDistance:6, count:1 })
+          if (!craftingTable) {
+            bot.chat('❌ Crafting table niet gevonden')
+            return false
+          }
+          
+          // Ensure window is open
+          if (!bot.currentWindow || bot.currentWindow.type !== 'minecraft:crafting') {
+            console.log('[CraftPickaxe] Opening crafting table for wooden pickaxe...')
+            await bot.openBlock(craftingTable)
+            await new Promise(r => setTimeout(r, 500)) // Longer wait for window to open
+          }
+          
+          const pickaxeItem = bot.registry.itemsByName.wooden_pickaxe
+          if (!pickaxeItem) {
+            console.log('[CraftPickaxe] wooden_pickaxe not in registry')
+            bot.chat('❌ wooden_pickaxe niet in registry')
+            return false
+          }
+          
+          console.log('[CraftPickaxe] Looking for recipes, window type:', bot.currentWindow?.type)
+          
+          // Try multiple recipe lookup methods
+          let recipes = null
+          
+          // Method 1: Use current window
+          if (bot.currentWindow) {
+            recipes = bot.recipesFor(pickaxeItem.id, null, 1, bot.currentWindow)
+            console.log('[CraftPickaxe] Window recipes:', recipes?.length || 0)
+          }
+          
+          // Method 2: Use crafting table block
+          if (!recipes || recipes.length === 0) {
+            recipes = bot.recipesFor(pickaxeItem.id, null, 1, craftingTable)
+            console.log('[CraftPickaxe] Table recipes:', recipes?.length || 0)
+          }
+          
+          // Method 3: Get all recipes and filter
+          if (!recipes || recipes.length === 0) {
+            try {
+              const allRecipes = bot.recipesFor(pickaxeItem.id)
+              recipes = allRecipes
+              console.log('[CraftPickaxe] All recipes:', recipes?.length || 0)
+            } catch(e) {
+              console.log('[CraftPickaxe] recipesFor all error:', e.message)
+            }
+          }
+          
+          if (!recipes || recipes.length === 0) {
+            console.log('[CraftPickaxe] No recipes found for wooden_pickaxe')
+            bot.chat('❌ Geen recept voor wooden pickaxe')
+            
+            // Debug: show what's in inventory
+            const planksInv = bot.inventory.items().filter(i => i.name && i.name.includes('planks'))
+            const sticksInv = bot.inventory.items().filter(i => i.name === 'stick')
+            console.log('[CraftPickaxe] Planks:', planksInv.map(i => `${i.name}:${i.count}`).join(', '))
+            console.log('[CraftPickaxe] Sticks:', sticksInv.map(i => `${i.name}:${i.count}`).join(', '))
+            
+            return false
+          }
+          
+          console.log('[CraftPickaxe] Crafting wooden_pickaxe with recipe...')
+          await bot.craft(recipes[0], 1, craftingTable)
+          console.log('[CraftPickaxe] Crafted wooden_pickaxe')
+          bot.chat('✅ Wooden pickaxe gemaakt!')
+          crafted = true
+        } catch(e) {
+          console.error('[CraftPickaxe] Direct craft error:', e.message)
+          bot.chat('❌ Wooden pickaxe craft error: ' + e.message)
+        }
       } else {
         bot.chat(`❌ Onvoldoende materialen voor wooden pickaxe (planks=${finalPlanks}, sticks=${finalSticks})`)
       }

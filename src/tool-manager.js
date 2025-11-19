@@ -329,13 +329,19 @@ function initToolMonitor(bot) {
   console.log('[ToolManager] Tool monitor initialized')
   
   let lastReplaceTime = 0
+  let lastLogTime = 0
   const REPLACE_COOLDOWN = 5000 // 5 seconds cooldown to prevent spam
+  const LOG_COOLDOWN = 2000 // Only log once per 2 seconds
   
   // Listen for tool breaks
   bot.on('itemDrop', async (entity) => {
     // Skip if bot is doing a task (auto mining, etc.)
     if (bot.isDoingTask) {
-      console.log('[ToolManager] Tool break detected but bot is doing task, skipping auto-replace')
+      const now = Date.now()
+      if (now - lastLogTime > LOG_COOLDOWN) {
+        console.log('[ToolManager] Tool break detected but bot is doing task, skipping auto-replace')
+        lastLogTime = now
+      }
       return
     }
     
